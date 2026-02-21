@@ -21,6 +21,8 @@ function resolveDefaultGatewayUrl(): string {
     : "ws://127.0.0.1:18789";
 }
 
+const RECONNECT_FAILURE_THRESHOLD = 4;
+
 @customElement("gateway-provider")
 export class GatewayProvider extends LitElement {
   @state() connected = false;
@@ -28,6 +30,8 @@ export class GatewayProvider extends LitElement {
   @state() lastError: string | null = null;
   @state() hello: GatewayClientHelloOk | null = null;
   @state() lastEvent: GatewayClientEventFrame | null = null;
+  @state() reconnectFailures = 0;
+  @state() retryStalled = false;
 
   private client: DashboardGatewayClient | null = null;
   private provider: ContextProvider<typeof gatewayContext> | null = null;
@@ -72,7 +76,9 @@ export class GatewayProvider extends LitElement {
         changed.has("connecting") ||
         changed.has("lastError") ||
         changed.has("hello") ||
-        changed.has("lastEvent"))
+        changed.has("lastEvent") ||
+        changed.has("reconnectFailures") ||
+        changed.has("retryStalled"))
     ) {
       this.provider.setValue(this.buildGatewayState());
     }
@@ -84,6 +90,8 @@ export class GatewayProvider extends LitElement {
     this.connecting = true;
     this.lastError = null;
     this.hello = null;
+    this.reconnectFailures = 0;
+    this.retryStalled = false;
 
     const sharedSecret = this.sharedSecret || undefined;
     const client = new DashboardGatewayClient({
@@ -99,6 +107,8 @@ export class GatewayProvider extends LitElement {
         this.connected = true;
         this.connecting = false;
         this.lastError = null;
+        this.reconnectFailures = 0;
+        this.retryStalled = false;
       },
       onEvent: (event) => {
         this.lastEvent = event;
@@ -106,6 +116,8 @@ export class GatewayProvider extends LitElement {
       onClose: () => {
         this.connected = false;
         this.connecting = true;
+        this.reconnectFailures += 1;
+        this.retryStalled = this.reconnectFailures >= RECONNECT_FAILURE_THRESHOLD;
       },
       onError: (error) => {
         this.lastError = error.message || "gateway error";
@@ -137,6 +149,10 @@ export class GatewayProvider extends LitElement {
     this.startClient();
   };
 
+  private retryNow = (): void => {
+    this.startClient();
+  };
+
   private buildGatewayState(): GatewayState {
     return {
       connected: this.connected,
@@ -145,6 +161,8 @@ export class GatewayProvider extends LitElement {
       hello: this.hello,
       lastEvent: this.lastEvent,
       gatewayUrl: this.gatewayUrl,
+      reconnectFailures: this.reconnectFailures,
+      retryStalled: this.retryStalled,
       request: async (method, params) => {
         if (!this.client) {
           throw new Error("gateway client unavailable");
@@ -152,6 +170,7 @@ export class GatewayProvider extends LitElement {
         return this.client.request(method, params);
       },
       reconnect: this.reconnect,
+      retryNow: this.retryNow,
     };
   }
 

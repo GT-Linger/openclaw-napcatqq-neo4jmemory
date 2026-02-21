@@ -49,6 +49,9 @@ export class OverviewView extends LitElement {
     const lowerError = error.toLowerCase();
     const isPasswordMismatch =
       lowerError.includes("password mismatch") || lowerError.includes("token mismatch");
+    const needsDeviceIdentity = lowerError.includes("device identity");
+    const hasSecureContext = typeof window !== "undefined" && window.isSecureContext;
+    const showManualRetry = !g.connected && g.retryStalled;
 
     return html`
       <section class="panel">
@@ -58,6 +61,55 @@ export class OverviewView extends LitElement {
           <span class="status-pill">${g.connecting ? "Reconnecting" : "Stable"}</span>
         </div>
         ${g.lastError ? html`<p class="error">${g.lastError}</p>` : null}
+        ${
+          !g.connected && g.reconnectFailures > 0
+            ? html`
+                <p class="muted">Reconnect attempts: ${g.reconnectFailures}</p>
+              `
+            : null
+        }
+
+        ${
+          showManualRetry
+            ? html`
+                <div class="panel" style="margin-top: 10px">
+                  <strong>Reconnect is taking longer than expected</strong>
+                  <p class="muted">
+                    Automatic retries are still running. You can force a fresh connect attempt now.
+                  </p>
+                  <button type="button" @click=${() => g.retryNow()}>Connect now</button>
+                </div>
+              `
+            : null
+        }
+
+        ${
+          !hasSecureContext
+            ? html`
+                <div class="panel" style="margin-top: 10px">
+                  <strong>Secure context required</strong>
+                  <p class="muted">
+                    Open this dashboard on <code>http://localhost:5174</code> or HTTPS. Device identity signing is
+                    disabled in insecure contexts.
+                  </p>
+                </div>
+              `
+            : null
+        }
+
+        ${
+          needsDeviceIdentity
+            ? html`
+                <div class="panel" style="margin-top: 10px">
+                  <strong>Device identity required</strong>
+                  <p class="muted">
+                    This dashboard must run on localhost/HTTPS so it can sign the gateway challenge. If this
+                    persists, clear browser storage for this site and reconnect.
+                  </p>
+                </div>
+              `
+            : null
+        }
 
         ${
           isPasswordMismatch

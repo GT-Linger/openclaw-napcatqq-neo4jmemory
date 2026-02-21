@@ -11,8 +11,11 @@ export type GatewayState = {
   hello: GatewayClientHelloOk | null;
   lastEvent: GatewayClientEventFrame | null;
   gatewayUrl: string;
+  reconnectFailures: number;
+  retryStalled: boolean;
   request: <T = unknown>(method: string, params?: unknown) => Promise<T>;
   reconnect: (settings: { gatewayUrl: string; sharedSecret: string }) => void;
+  retryNow: () => void;
 };
 
 export const gatewayContext = createContext<GatewayState>("dashboard-gateway");

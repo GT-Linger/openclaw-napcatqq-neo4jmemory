@@ -544,7 +544,11 @@ importers:
         specifier: workspace:*
         version: link:../..
 
-  packages/dashboard-gateway-client: {}
+  packages/dashboard-gateway-client:
+    dependencies:
+      '@noble/ed25519':
+        specifier: 3.0.0
+        version: 3.0.0
 
   packages/dashboard-lit:
     dependencies:
