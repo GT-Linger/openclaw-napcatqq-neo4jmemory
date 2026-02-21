@@ -300,12 +300,12 @@ export function detachThemeListener(host: SettingsHost) {
   }
   if (typeof host.themeMedia.removeEventListener === "function") {
     host.themeMedia.removeEventListener("change", host.themeMediaHandler);
-    return;
+  } else {
+    const legacy = host.themeMedia as MediaQueryList & {
+      removeListener: (cb: (event: MediaQueryListEvent) => void) => void;
+    };
+    legacy.removeListener(host.themeMediaHandler);
   }
-  const legacy = host.themeMedia as MediaQueryList & {
-    removeListener: (cb: (event: MediaQueryListEvent) => void) => void;
-  };
-  legacy.removeListener(host.themeMediaHandler);
   host.themeMedia = null;
   host.themeMediaHandler = null;
 }

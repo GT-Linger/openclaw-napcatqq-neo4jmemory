@@ -1,5 +1,8 @@
+import { consume } from "@lit/context";
 import { LitElement, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { gatewayContext, type GatewayState } from "../context/gateway-context.js";
+import { parseOverviewSnapshot } from "../controllers/overview.js";
 import {
   TAB_GROUPS,
   iconForTab,
@@ -18,10 +21,12 @@ export class SidebarNav extends LitElement {
     return this;
   }
 
+  @consume({ context: gatewayContext, subscribe: true })
+  gateway!: GatewayState;
+
   @property({ type: String }) activeTab: Tab = "overview";
   @property({ type: String }) basePath = "";
   @property({ type: Boolean }) collapsed = false;
-  @property({ type: String }) version = "";
 
   @state() private collapsedGroups: Record<string, boolean> = {};
 
@@ -48,6 +53,7 @@ export class SidebarNav extends LitElement {
 
   override render() {
     const faviconSrc = this.basePath ? `${this.basePath}/favicon.svg` : "/favicon.svg";
+    const version = parseOverviewSnapshot(this.gateway?.hello ?? null).gatewayVersion ?? "";
 
     return html`
       <aside class="sidebar ${this.collapsed ? "sidebar--collapsed" : ""}">
@@ -141,12 +147,12 @@ export class SidebarNav extends LitElement {
             }
           </a>
           ${
-            this.version
+            version
               ? html`
-            <div class="sidebar-version" title=${`v${this.version}`}>
+            <div class="sidebar-version" title=${`v${version}`}>
               ${
                 !this.collapsed
-                  ? html`<span class="sidebar-version__text">v${this.version}</span>`
+                  ? html`<span class="sidebar-version__text">v${version}</span>`
                   : html`
                       <span class="sidebar-version__dot"></span>
                     `

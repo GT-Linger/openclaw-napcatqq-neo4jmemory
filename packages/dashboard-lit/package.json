@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@create-markdown/preview": "^0.2.0",
     "@lit/context": "^1.1.6",
     "@openclaw/dashboard-gateway-client": "workspace:*",
     "lit": "^3.3.2"

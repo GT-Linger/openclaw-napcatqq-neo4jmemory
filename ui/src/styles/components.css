@@ -26,7 +26,7 @@
 }
 
 .update-banner__btn:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.15);
+  background: var(--danger-subtle);
 }
 
 /* ===========================================
@@ -74,10 +74,10 @@
    =========================================== */
 
 .stat {
-  background: var(--card);
+  background: color-mix(in srgb, var(--card) 96%, transparent);
   border-radius: var(--radius-md);
   padding: 14px 16px;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
   transition:
     border-color var(--duration-normal) var(--ease-out),
     box-shadow var(--duration-normal) var(--ease-out);
@@ -87,7 +87,7 @@
 .stat:hover {
   border-color: var(--border-strong);
   box-shadow:
-    var(--shadow-sm),
+    0 6px 16px rgba(0, 0, 0, 0.18),
     inset 0 1px 0 var(--card-highlight);
 }
 
@@ -217,17 +217,20 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
   padding: 6px 12px;
   border-radius: var(--radius-full);
-  background: var(--secondary);
+  background: color-mix(in srgb, var(--secondary) 92%, transparent);
   font-size: 13px;
   font-weight: 500;
-  transition: border-color var(--duration-fast) ease;
+  transition:
+    border-color var(--duration-fast) ease,
+    background var(--duration-fast) ease;
 }
 
 .pill:hover {
   border-color: var(--border-strong);
+  background: var(--bg-hover);
 }
 
 .pill.danger {
@@ -318,13 +321,13 @@
   height: 8px;
   border-radius: var(--radius-full);
   background: var(--danger);
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--danger) 50%, transparent);
   animation: pulse-subtle 2s ease-in-out infinite;
 }
 
 .statusDot.ok {
   background: var(--ok);
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--ok) 50%, transparent);
   animation: none;
 }
 
@@ -337,8 +340,8 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid var(--border);
-  background: var(--bg-elevated);
+  border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated) 95%, transparent);
   padding: 9px 16px;
   border-radius: var(--radius-md);
   font-size: 13px;
@@ -352,14 +355,14 @@
     transform var(--duration-fast) var(--ease-out);
 }
 
-.btn:hover {
+.btn:hover:not(:disabled) {
   background: var(--bg-hover);
   border-color: var(--border-strong);
   transform: translateY(-1px);
   box-shadow: var(--shadow-sm);
 }
 
-.btn:active {
+.btn:active:not(:disabled) {
   background: var(--secondary);
   transform: translateY(0);
   box-shadow: none;
@@ -377,18 +380,16 @@
 }
 
 .btn.primary {
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 88%, black 10%);
   background: var(--accent);
   color: var(--primary-foreground);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
 }
 
 .btn.primary:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
-  box-shadow:
-    var(--shadow-md),
-    0 0 20px var(--accent-glow);
+  box-shadow: var(--shadow-md);
 }
 
 /* Keyboard shortcut badge (shadcn style) */
@@ -421,19 +422,19 @@
 }
 
 .btn.active {
-  border-color: var(--accent);
-  background: var(--accent-subtle);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent-subtle) 75%, var(--secondary));
   color: var(--accent);
 }
 
 .btn.danger {
-  border-color: transparent;
+  border-color: color-mix(in srgb, var(--danger) 25%, transparent);
   background: var(--danger-subtle);
   color: var(--danger);
 }
 
 .btn.danger:hover {
-  background: rgba(239, 68, 68, 0.15);
+  background: color-mix(in srgb, var(--danger-subtle) 70%, transparent);
 }
 
 .btn--sm {
@@ -441,9 +442,16 @@
   font-size: 12px;
 }
 
+.btn:focus-visible {
+  border-color: var(--ring);
+  box-shadow: var(--focus-ring);
+}
+
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 /* ===========================================
@@ -468,22 +476,32 @@
 .field input,
 .field textarea,
 .field select {
-  border: 1px solid var(--input);
-  background: var(--card);
+  border: 1px solid color-mix(in srgb, var(--input) 92%, transparent);
+  background: color-mix(in srgb, var(--card) 96%, var(--bg));
   border-radius: var(--radius-md);
-  padding: 8px 12px;
+  padding: 9px 12px;
   outline: none;
   box-shadow: inset 0 1px 0 var(--card-highlight);
   transition:
     border-color var(--duration-fast) ease,
-    box-shadow var(--duration-fast) ease;
+    box-shadow var(--duration-fast) ease,
+    background var(--duration-fast) ease;
 }
 
-.field input:focus,
-.field textarea:focus,
-.field select:focus {
+.field input:focus-visible,
+.field textarea:focus-visible,
+.field select:focus-visible {
   border-color: var(--ring);
   box-shadow: var(--focus-ring);
+  background: var(--card);
+}
+
+.field input:disabled,
+.field textarea:disabled,
+.field select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: color-mix(in srgb, var(--secondary) 80%, transparent);
 }
 
 .field select {
@@ -574,20 +592,20 @@
 }
 
 .callout.danger {
-  border-color: rgba(239, 68, 68, 0.25);
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(239, 68, 68, 0.04) 100%);
+  border-color: color-mix(in srgb, var(--danger) 25%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--danger) 8%, transparent) 0%, color-mix(in srgb, var(--danger) 4%, transparent) 100%);
   color: var(--danger);
 }
 
 .callout.info {
-  border-color: rgba(59, 130, 246, 0.25);
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0.04) 100%);
+  border-color: color-mix(in srgb, var(--info) 25%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--info) 8%, transparent) 0%, color-mix(in srgb, var(--info) 4%, transparent) 100%);
   color: var(--info);
 }
 
 .callout.success {
-  border-color: rgba(34, 197, 94, 0.25);
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, rgba(34, 197, 94, 0.04) 100%);
+  border-color: color-mix(in srgb, var(--ok) 25%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--ok) 8%, transparent) 0%, color-mix(in srgb, var(--ok) 4%, transparent) 100%);
   color: var(--ok);
 }
 
@@ -601,7 +619,7 @@
   line-height: 1.2;
   padding: 6px 14px;
   margin-bottom: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   border: 1px solid var(--border);
   background: var(--panel-strong);
   color: var(--text);
@@ -623,7 +641,7 @@
 
 .compaction-indicator--active {
   color: var(--info);
-  border-color: rgba(59, 130, 246, 0.35);
+  border-color: color-mix(in srgb, var(--info) 35%, transparent);
 }
 
 .compaction-indicator--active svg {
@@ -632,17 +650,17 @@
 
 .compaction-indicator--complete {
   color: var(--ok);
-  border-color: rgba(34, 197, 94, 0.35);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
 }
 
 .compaction-indicator--fallback {
-  color: #d97706;
+  color: var(--warn);
   border-color: rgba(217, 119, 6, 0.35);
 }
 
 .compaction-indicator--fallback-cleared {
   color: var(--ok);
-  border-color: rgba(34, 197, 94, 0.35);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
 }
 
 @keyframes compaction-spin {
@@ -690,11 +708,14 @@
   grid-template-columns: minmax(0, 1fr) minmax(200px, 260px);
   gap: 16px;
   align-items: start;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
   border-radius: var(--radius-md);
   padding: 12px;
-  background: var(--card);
-  transition: border-color var(--duration-fast) ease;
+  background: color-mix(in srgb, var(--card) 97%, transparent);
+  transition:
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
+    background var(--duration-fast) ease;
 }
 
 .list-item-clickable {
@@ -703,11 +724,14 @@
 
 .list-item-clickable:hover {
   border-color: var(--border-strong);
+  background: color-mix(in srgb, var(--card) 80%, var(--bg-hover));
+  box-shadow: var(--shadow-sm);
 }
 
 .list-item-selected {
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
   box-shadow: var(--focus-ring);
+  background: color-mix(in srgb, var(--accent-subtle) 45%, var(--card));
 }
 
 .list-main {
@@ -846,7 +870,7 @@
 
 .cron-job-status-ok {
   color: var(--ok);
-  border-color: rgba(34, 197, 94, 0.35);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
   background: var(--ok-subtle);
 }
 
@@ -917,11 +941,11 @@
 .chip {
   font-size: 12px;
   font-weight: 500;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
   border-radius: var(--radius-full);
   padding: 5px 12px;
   color: var(--muted);
-  background: var(--secondary);
+  background: color-mix(in srgb, var(--secondary) 92%, transparent);
   transition:
     border-color var(--duration-fast) var(--ease-out),
     background var(--duration-fast) var(--ease-out),
@@ -930,6 +954,7 @@
 
 .chip:hover {
   border-color: var(--border-strong);
+  background: var(--bg-hover);
   transform: translateY(-1px);
 }
 
@@ -951,7 +976,7 @@
 
 .chip-danger {
   color: var(--danger);
-  border-color: rgba(239, 68, 68, 0.3);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
   background: var(--danger-subtle);
 }
 
@@ -961,7 +986,7 @@
 
 .table {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .table-head,
@@ -980,15 +1005,25 @@
 }
 
 .table-row {
-  border: 1px solid var(--border);
-  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
+  padding: 11px 12px;
   border-radius: var(--radius-md);
-  background: var(--card);
-  transition: border-color var(--duration-fast) ease;
+  background: color-mix(in srgb, var(--card) 97%, transparent);
+  transition:
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
+    background var(--duration-fast) ease;
 }
 
 .table-row:hover {
   border-color: var(--border-strong);
+  background: color-mix(in srgb, var(--card) 82%, var(--bg-hover));
+  box-shadow: var(--shadow-sm);
+}
+
+.table-row:focus-within {
+  border-color: var(--ring);
+  box-shadow: var(--focus-ring);
 }
 
 .session-link {
@@ -1022,12 +1057,13 @@
    =========================================== */
 
 .log-stream {
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
   border-radius: var(--radius-md);
-  background: var(--card);
+  background: color-mix(in srgb, var(--card) 98%, transparent);
   max-height: 500px;
   overflow: auto;
   container-type: inline-size;
+  box-shadow: inset 0 1px 0 var(--card-highlight);
 }
 
 .log-row {
@@ -1036,7 +1072,7 @@
   gap: 12px;
   align-items: start;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
   font-size: 12px;
   transition: background var(--duration-fast) ease;
 }
@@ -1239,7 +1275,7 @@
 .chat-new-messages {
   align-self: center;
   margin: 8px auto 0;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   padding: 6px 12px;
   font-size: 12px;
   line-height: 1;
@@ -1289,8 +1325,8 @@
 }
 
 :root[data-theme="light"] .chat-line.user .chat-bubble {
-  border-color: rgba(234, 88, 12, 0.2);
-  background: rgba(251, 146, 60, 0.12);
+  border-color: color-mix(in srgb, var(--warn) 20%, transparent);
+  background: var(--warn-subtle);
 }
 
 .chat-line.assistant .chat-bubble {

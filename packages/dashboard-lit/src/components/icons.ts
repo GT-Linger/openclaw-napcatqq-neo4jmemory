@@ -36,7 +36,8 @@ export type IconName =
   | "brain"
   | "terminal"
   | "copy"
-  | "chevronUp";
+  | "chevronUp"
+  | "paperclip";
 
 type IconOptions = {
   className?: string;
@@ -302,6 +303,11 @@ const ICONS: Record<IconName, (opts?: IconOptions) => TemplateResult> = {
     ),
   chevronUp: (opts) =>
     wrap(svg`<path d="M18 15l-6-6-6 6" stroke-linecap="round" stroke-linejoin="round"/>`, opts),
+  paperclip: (opts) =>
+    wrap(
+      svg`<path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" stroke-linecap="round" stroke-linejoin="round"/>`,
+      opts,
+    ),
 };
 
 export function icon(name: IconName, opts?: IconOptions): TemplateResult {

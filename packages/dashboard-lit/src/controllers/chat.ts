@@ -35,6 +35,12 @@ export type ChatAbortResult = {
   runIds: string[];
 };
 
+export type ChatAttachment = {
+  mimeType: string;
+  fileName: string;
+  content: string; // base64
+};
+
 export async function loadHistory(
   request: GatewayRequest,
   sessionKey: string,
@@ -51,12 +57,14 @@ export async function sendMessage(
   request: GatewayRequest,
   sessionKey: string,
   message: string,
+  attachments?: ChatAttachment[],
 ): Promise<ChatSendResult> {
   const idempotencyKey = `dash-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   return request<ChatSendResult>("chat.send", {
     sessionKey,
     message,
     idempotencyKey,
+    ...(attachments?.length ? { attachments } : {}),
   });
 }
 

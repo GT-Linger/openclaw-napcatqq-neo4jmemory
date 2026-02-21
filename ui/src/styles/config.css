@@ -160,7 +160,7 @@
 }
 
 :root[data-theme="light"] .config-nav__item:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--bg-hover);
 }
 
 .config-nav__item.active {
@@ -275,7 +275,7 @@
   padding: 6px 14px;
   border-radius: var(--radius-full);
   background: var(--accent-subtle);
-  border: 1px solid rgba(255, 77, 77, 0.3);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
   color: var(--accent);
   font-size: 12px;
   font-weight: 600;
@@ -289,7 +289,7 @@
 /* Diff Panel */
 .config-diff {
   margin: 18px 22px 0;
-  border: 1px solid rgba(255, 77, 77, 0.25);
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
   border-radius: var(--radius-lg);
   background: var(--accent-subtle);
   overflow: hidden;
@@ -624,7 +624,7 @@
   padding: 14px;
   border-radius: var(--radius-md);
   background: var(--danger-subtle);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
 }
 
 .cfg-field__label {
@@ -973,7 +973,7 @@
 
 .cfg-toggle input:checked + .cfg-toggle__track {
   background: var(--ok-subtle);
-  border-color: rgba(34, 197, 94, 0.4);
+  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
 }
 
 .cfg-toggle input:checked + .cfg-toggle__track::after {
@@ -1320,7 +1320,7 @@
 }
 
 .pill--ok {
-  border-color: rgba(34, 197, 94, 0.35);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
   color: var(--ok);
 }
 

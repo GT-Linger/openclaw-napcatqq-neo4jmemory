@@ -57,6 +57,7 @@ export class DashboardApp extends LitElement {
   @state() basePath = "";
   @state() theme: ThemeMode = "docsTheme";
   @state() navCollapsed = false;
+  @state() private isMobile = false;
   /** Button order — only updates when the toggle collapses, so the active
    *  button doesn't jump while the picker is still open. */
   @state() private themeOrder: ThemeMode[] = ["docsTheme", "landingTheme", "light"];
@@ -69,13 +70,9 @@ export class DashboardApp extends LitElement {
     this.syncTabFromUrl();
     this.initTheme();
     this.navCollapsed = localStorage.getItem(NAV_COLLAPSED_KEY) === "true";
+    this.isMobile = window.innerWidth < 768;
     window.addEventListener("popstate", this.handlePopState);
     window.addEventListener("resize", this.handleResize);
-
-    // Auto-collapse sidebar on narrow screens
-    if (window.innerWidth < 768) {
-      this.navCollapsed = true;
-    }
   }
 
   override disconnectedCallback(): void {
@@ -108,26 +105,42 @@ export class DashboardApp extends LitElement {
 
   private handleTabChange = (e: CustomEvent<Tab>): void => {
     this.setTab(e.detail);
-
-    // On mobile, auto-collapse sidebar after tab selection
-    if (window.innerWidth < 768 && !this.navCollapsed) {
-      this.navCollapsed = true;
-      localStorage.setItem(NAV_COLLAPSED_KEY, "true");
-    }
+    this.scrollToContent(true);
   };
 
   /* ── Sidebar ─────────────────────────────────────── */
 
+  override firstUpdated(): void {
+    if (this.isMobile) {
+      this.scrollToContent();
+    }
+  }
+
+  private scrollToContent(smooth = false): void {
+    if (!this.isMobile) {
+      return;
+    }
+    const shell = this.querySelector(".shell");
+    if (!shell) {
+      return;
+    }
+    shell.scrollTo({ left: shell.scrollWidth, behavior: smooth ? "smooth" : "instant" });
+  }
+
   private toggleNav(): void {
+    if (this.isMobile) {
+      this.scrollToContent(true);
+      return;
+    }
     this.navCollapsed = !this.navCollapsed;
     localStorage.setItem(NAV_COLLAPSED_KEY, String(this.navCollapsed));
   }
 
   private handleResize = (): void => {
-    // Auto-collapse on narrow, auto-expand on wide (if not explicitly collapsed)
-    if (window.innerWidth < 768 && !this.navCollapsed) {
-      this.navCollapsed = true;
-      localStorage.setItem(NAV_COLLAPSED_KEY, "true");
+    const wasMobile = this.isMobile;
+    this.isMobile = window.innerWidth < 768;
+    if (this.isMobile && !wasMobile) {
+      requestAnimationFrame(() => this.scrollToContent());
     }
   };
 
@@ -237,7 +250,7 @@ export class DashboardApp extends LitElement {
           <sidebar-nav
             .activeTab=${this.tab}
             .basePath=${this.basePath}
-            .collapsed=${this.navCollapsed}
+            .collapsed=${this.navCollapsed && !this.isMobile}
 
             @tab-change=${this.handleTabChange}
             @toggle-collapse=${() => this.toggleNav()}

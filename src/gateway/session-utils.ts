@@ -837,9 +837,16 @@ export function listSessionsFromStore(params: {
     sessions = sessions.filter((s) => (s.updatedAt ?? 0) >= cutoff);
   }
 
+  const totalCount = sessions.length;
+
   if (typeof opts.limit === "number" && Number.isFinite(opts.limit)) {
-    const limit = Math.max(1, Math.floor(opts.limit));
-    sessions = sessions.slice(0, limit);
+    const limit = Math.floor(opts.limit);
+    if (limit <= 0) {
+      // limit=0 means "count only, return no sessions"
+      sessions = [];
+    } else {
+      sessions = sessions.slice(0, limit);
+    }
   }
 
   const finalSessions: GatewaySessionRow[] = sessions.map((s) => {
@@ -871,7 +878,7 @@ export function listSessionsFromStore(params: {
   return {
     ts: now,
     path: storePath,
-    count: finalSessions.length,
+    count: totalCount,
     defaults: getSessionDefaults(cfg),
     sessions: finalSessions,
   };

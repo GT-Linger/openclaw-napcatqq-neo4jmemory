@@ -552,6 +552,9 @@ importers:
 
   packages/dashboard-lit:
     dependencies:
+      '@create-markdown/preview':
+        specifier: ^0.2.0
+        version: 0.2.0(@create-markdown/core@0.2.0)
       '@lit/context':
         specifier: ^1.1.6
         version: 1.1.6
@@ -874,6 +877,23 @@ packages:
 
   '@cloudflare/workers-types@4.20260120.0':
     resolution: {integrity: sha512-B8pueG+a5S+mdK3z8oKu1ShcxloZ7qWb68IEyLLaepvdryIbNC7JVPcY0bWsjS56UQVKc5fnyRge3yZIwc9bxw==}
+
+  '@create-markdown/core@0.2.0':
+    resolution: {integrity: sha512-lCvQcIY+C+oyHbojZSxuEwgVjcrSgT0yU7VvRrx6g2dyC2kb/HHyakkcq15n6SjXUCgvhocxnXQURoROH/cKbA==}
+    engines: {node: '>=20.0.0'}
+
+  '@create-markdown/preview@0.2.0':
+    resolution: {integrity: sha512-62fOev7Ebe4JqbYIgV6Fcj7sgEKGEB/ZsX3/VIjXEQliCwu9JWCAHih+Yim6m2G1t1Q2u1gKpNXt0eP/12RV3g==}
+    engines: {node: '>=20.0.0'}
+    peerDependencies:
+      '@create-markdown/core': '>=0.2.0'
+      mermaid: '>=10.0.0'
+      shiki: '>=1.0.0'
+    peerDependenciesMeta:
+      mermaid:
+        optional: true
+      shiki:
+        optional: true
 
   '@cypress/request-promise@5.0.0':
     resolution: {integrity: sha512-eKdYVpa9cBEw2kTBlHeu1PP16Blwtum6QHg/u9s/MoHkZfuo1pRGka1VlUHXF5kdew82BvOJVVGk0x8X0nbp+w==}
@@ -6443,6 +6463,12 @@ snapshots:
 
   '@cloudflare/workers-types@4.20260120.0':
     optional: true
+
+  '@create-markdown/core@0.2.0': {}
+
+  '@create-markdown/preview@0.2.0(@create-markdown/core@0.2.0)':
+    dependencies:
+      '@create-markdown/core': 0.2.0
 
   '@cypress/request-promise@5.0.0(@cypress/request@3.0.10)(@cypress/request@3.0.10)':
     dependencies:

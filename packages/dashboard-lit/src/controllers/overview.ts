@@ -10,9 +10,13 @@ export type OverviewSnapshot = {
 
 type SnapshotPayload = {
   uptimeMs?: number;
-  policy?: { tickIntervalMs?: number };
   authMode?: string;
-  version?: string;
+};
+
+/** Top-level hello-ok fields that live outside `snapshot`. */
+type HelloExtras = {
+  policy?: { tickIntervalMs?: number };
+  server?: { version?: string };
 };
 
 export function parseOverviewSnapshot(hello: GatewayClientHelloOk | null): OverviewSnapshot {
@@ -27,13 +31,15 @@ export function parseOverviewSnapshot(hello: GatewayClientHelloOk | null): Overv
   }
 
   const snapshot = hello.snapshot as SnapshotPayload | undefined;
+  // `policy` and `server` are top-level hello-ok siblings, not nested in `snapshot`.
+  const extras = hello as unknown as HelloExtras;
 
   return {
     uptimeMs: snapshot?.uptimeMs ?? null,
-    tickIntervalMs: snapshot?.policy?.tickIntervalMs ?? null,
+    tickIntervalMs: extras.policy?.tickIntervalMs ?? null,
     authMode: snapshot?.authMode ?? null,
     protocolVersion: hello.protocol ?? null,
-    gatewayVersion: snapshot?.version ?? null,
+    gatewayVersion: extras.server?.version ?? null,
   };
 }
 
