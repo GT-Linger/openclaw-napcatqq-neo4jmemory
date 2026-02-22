@@ -667,19 +667,31 @@
 
 .callout.danger {
   border-color: color-mix(in srgb, var(--danger) 25%, transparent);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--danger) 8%, transparent) 0%, color-mix(in srgb, var(--danger) 4%, transparent) 100%);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--danger) 8%, transparent) 0%,
+    color-mix(in srgb, var(--danger) 4%, transparent) 100%
+  );
   color: var(--danger);
 }
 
 .callout.info {
   border-color: color-mix(in srgb, var(--info) 25%, transparent);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--info) 8%, transparent) 0%, color-mix(in srgb, var(--info) 4%, transparent) 100%);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--info) 8%, transparent) 0%,
+    color-mix(in srgb, var(--info) 4%, transparent) 100%
+  );
   color: var(--info);
 }
 
 .callout.success {
   border-color: color-mix(in srgb, var(--ok) 25%, transparent);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--ok) 8%, transparent) 0%, color-mix(in srgb, var(--ok) 4%, transparent) 100%);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--ok) 8%, transparent) 0%,
+    color-mix(in srgb, var(--ok) 4%, transparent) 100%
+  );
   color: var(--ok);
 }
 

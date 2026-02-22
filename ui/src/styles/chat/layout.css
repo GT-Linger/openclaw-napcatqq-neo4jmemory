@@ -56,7 +56,11 @@
   margin: 0 -4px;
   min-height: 0; /* Allow shrinking for flex scroll behavior */
   border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 72%, transparent), transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--panel) 72%, transparent),
+    transparent
+  );
 }
 
 /* Focus mode exit button */

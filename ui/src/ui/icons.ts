@@ -228,6 +228,40 @@ export const icons = {
       />
     </svg>
   `,
+  panelLeftClose: html`
+    <svg viewBox="0 0 24 24">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M9 3v18" stroke-linecap="round" />
+      <path d="M16 10l-3 2 3 2" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+  `,
+  panelLeftOpen: html`
+    <svg viewBox="0 0 24 24">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M9 3v18" stroke-linecap="round" />
+      <path d="M14 10l3 2-3 2" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+  `,
+  chevronDown: html`
+    <svg viewBox="0 0 24 24">
+      <path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+  `,
+  chevronRight: html`
+    <svg viewBox="0 0 24 24">
+      <path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+  `,
+  externalLink: html`
+    <svg viewBox="0 0 24 24">
+      <path
+        d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+      <path d="M15 3h6v6M10 14L21 3" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+  `,
 } as const;
 
 export type IconName = keyof typeof icons;
