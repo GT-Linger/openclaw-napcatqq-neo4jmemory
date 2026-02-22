@@ -176,6 +176,29 @@ export type RuntimeLogger = {
   error: (message: string, meta?: Record<string, unknown>) => void;
 };
 
+export type LlmCompleteParams = {
+  provider: string;
+  model: string;
+  prompt: string;
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+};
+
+export type LlmCompleteResult = {
+  text: string;
+  model: string;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+  };
+};
+
+export type LlmRuntime = {
+  complete: (params: LlmCompleteParams) => Promise<LlmCompleteResult>;
+  getMainModel: () => { provider: string; model: string } | null;
+};
+
 export type PluginRuntime = {
   version: string;
   config: {
@@ -187,6 +210,7 @@ export type PluginRuntime = {
     runCommandWithTimeout: RunCommandWithTimeout;
     formatNativeDependencyHint: FormatNativeDependencyHint;
   };
+  llm: LlmRuntime;
   media: {
     loadWebMedia: LoadWebMedia;
     detectMime: DetectMime;

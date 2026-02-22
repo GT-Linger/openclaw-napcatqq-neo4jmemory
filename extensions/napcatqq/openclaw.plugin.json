@@ -1,0 +1,224 @@
+{
+  "$schema": "https://openclaw.dev/schemas/plugin.json",
+  "name": "napcatqq",
+  "version": "1.0.0",
+  "displayName": "NapCatQQ Channel",
+  "description": "NapCatQQ channel plugin with OneBot 11 protocol support for QQ messaging platform",
+  "author": "OpenClaw Team",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "category": "channel",
+  "keywords": [
+    "qq",
+    "napcat",
+    "onebot",
+    "onebot11",
+    "messaging",
+    "channel",
+    "websocket"
+  ],
+  "icon": "message-circle",
+  "homepage": "https://github.com/openclaw/openclaw",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openclaw/openclaw.git"
+  },
+  "engines": {
+    "openclaw": ">=1.0.0",
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "ws": "^8.0.0"
+  },
+  "dependencies": {},
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "是否启用插件"
+      },
+      "name": {
+        "type": "string",
+        "description": "机器人名称"
+      },
+      "wsPort": {
+        "type": "number",
+        "default": 3001,
+        "description": "WebSocket 服务器端口"
+      },
+      "wsHost": {
+        "type": "string",
+        "default": "127.0.0.1",
+        "description": "WebSocket 服务器主机"
+      },
+      "wsPath": {
+        "type": "string",
+        "default": "/onebot/v11/ws",
+        "description": "WebSocket 路径"
+      },
+      "accessToken": {
+        "type": "string",
+        "description": "访问令牌用于认证"
+      },
+      "dmPolicy": {
+        "type": "string",
+        "enum": ["open", "pairing", "closed"],
+        "default": "pairing",
+        "description": "私信策略"
+      },
+      "groupPolicy": {
+        "type": "string",
+        "enum": ["open", "allowlist", "closed"],
+        "default": "allowlist",
+        "description": "群消息策略"
+      },
+      "allowFrom": {
+        "type": "array",
+        "items": {
+          "type": ["string", "number"]
+        },
+        "description": "允许的私聊用户列表"
+      },
+      "groupAllowFrom": {
+        "type": "array",
+        "items": {
+          "type": ["string", "number"]
+        },
+        "description": "允许的群列表"
+      },
+      "groups": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "requireMention": {
+              "type": "boolean",
+              "default": false
+            },
+            "systemPrompt": {
+              "type": "string"
+            },
+            "skills": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "allowFrom": {
+              "type": "array",
+              "items": {
+                "type": ["string", "number"]
+              }
+            }
+          }
+        }
+      },
+      "reconnect": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "maxRetries": {
+            "type": "number",
+            "default": 10
+          },
+          "retryDelay": {
+            "type": "number",
+            "default": 5000
+          },
+          "backoffMultiplier": {
+            "type": "number",
+            "default": 2
+          },
+          "maxDelay": {
+            "type": "number",
+            "default": 60000
+          }
+        }
+      },
+      "heartbeat": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "interval": {
+            "type": "number",
+            "default": 30000
+          },
+          "timeout": {
+            "type": "number",
+            "default": 10000
+          }
+        }
+      }
+    }
+  },
+  "defaultConfig": {
+    "enabled": true,
+    "wsPort": 3001,
+    "wsHost": "127.0.0.1",
+    "wsPath": "/onebot/v11/ws",
+    "dmPolicy": "pairing",
+    "groupPolicy": "allowlist",
+    "reconnect": {
+      "enabled": true,
+      "maxRetries": 10,
+      "retryDelay": 5000,
+      "backoffMultiplier": 2,
+      "maxDelay": 60000
+    },
+    "heartbeat": {
+      "enabled": true,
+      "interval": 30000,
+      "timeout": 10000
+    }
+  },
+  "capabilities": {
+    "chatTypes": ["direct", "group"],
+    "media": true,
+    "blockStreaming": true
+  },
+  "tools": [],
+  "cliCommands": [
+    {
+      "command": "napcatqq",
+      "alias": "nq",
+      "description": "NapCatQQ channel management"
+    }
+  ],
+  "hooks": {
+    "on_message": "处理收到的消息",
+    "on_connect": "WebSocket 连接建立",
+    "on_disconnect": "WebSocket 连接断开"
+  },
+  "provides": {
+    "channel": {
+      "type": "messaging",
+      "platform": "qq",
+      "protocol": "onebot11",
+      "features": [
+        "private-message",
+        "group-message",
+        "file-transfer",
+        "markdown",
+        "miniapp",
+        "media",
+        "reply",
+        "mention"
+      ]
+    }
+  },
+  "readme": "README.md",
+  "changelog": "CHANGELOG.md"
+}

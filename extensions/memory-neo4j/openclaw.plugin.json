@@ -1,0 +1,189 @@
+{
+  "$schema": "https://openclaw.dev/schemas/plugin.json",
+  "name": "memory-neo4j",
+  "version": "1.0.0",
+  "displayName": "Neo4j 图谱记忆系统",
+  "description": "基于 Neo4j 图数据库的智能记忆管理插件，支持实体关系提取、多跳搜索、上下文关联和自动遗忘",
+  "author": "OpenClaw Team",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "category": "memory",
+  "keywords": [
+    "memory",
+    "neo4j",
+    "graph",
+    "knowledge-graph",
+    "entity-extraction",
+    "relationship"
+  ],
+  "icon": "brain-circuit",
+  "homepage": "https://github.com/openclaw/memory-neo4j",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openclaw/memory-neo4j.git"
+  },
+  "engines": {
+    "openclaw": ">=1.0.0",
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "commander": "^11.0.0 || ^12.0.0",
+    "neo4j-driver": "^5.0.0"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.32.0"
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "是否启用插件"
+      },
+      "connection": {
+        "type": "object",
+        "properties": {
+          "uri": {
+            "type": "string",
+            "default": "bolt://localhost:7687",
+            "description": "Neo4j 连接 URI"
+          },
+          "username": {
+            "type": "string",
+            "default": "neo4j",
+            "description": "数据库用户名"
+          },
+          "password": {
+            "type": "string",
+            "description": "数据库密码"
+          },
+          "database": {
+            "type": "string",
+            "default": "neo4j",
+            "description": "数据库名称"
+          }
+        },
+        "required": ["uri", "username", "password"]
+      },
+      "models": {
+        "type": "object",
+        "description": "模型配置",
+        "properties": {
+          "strategy": {
+            "type": "string",
+            "enum": ["same-as-main", "independent", "hybrid"],
+            "default": "hybrid",
+            "description": "模型策略"
+          }
+        }
+      },
+      "extraction": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["auto", "manual", "hybrid"],
+            "default": "hybrid",
+            "description": "提取模式"
+          },
+          "minConfidence": {
+            "type": "number",
+            "default": 0.6,
+            "minimum": 0,
+            "maximum": 1,
+            "description": "最小置信度阈值"
+          }
+        }
+      },
+      "lifecycle": {
+        "type": "object",
+        "properties": {
+          "autoCapture": {
+            "type": "boolean",
+            "default": true,
+            "description": "自动捕获记忆"
+          },
+          "autoRecall": {
+            "type": "boolean",
+            "default": true,
+            "description": "自动召回记忆"
+          }
+        }
+      }
+    }
+  },
+  "defaultConfig": {
+    "enabled": true,
+    "connection": {
+      "uri": "bolt://localhost:7687",
+      "username": "neo4j",
+      "password": "",
+      "database": "neo4j"
+    },
+    "models": {
+      "strategy": "hybrid",
+      "extraction": {
+        "quick": {
+          "enabled": true,
+          "provider": "openai",
+          "model": "gpt-4o-mini"
+        },
+        "deep": {
+          "enabled": true,
+          "useMainModel": true
+        }
+      }
+    },
+    "extraction": {
+      "mode": "hybrid",
+      "minConfidence": 0.6
+    },
+    "lifecycle": {
+      "autoCapture": true,
+      "autoRecall": true
+    }
+  },
+  "tools": [
+    {
+      "name": "memory_graph_search",
+      "description": "搜索知识图谱中的实体及其关系"
+    },
+    {
+      "name": "memory_entity_add",
+      "description": "向知识图谱添加新实体"
+    },
+    {
+      "name": "memory_relation_add",
+      "description": "在知识图谱中创建实体间的关系"
+    }
+  ],
+  "cliCommands": [
+    {
+      "command": "memory-graph",
+      "alias": "mg",
+      "description": "Neo4j 图谱记忆管理"
+    }
+  ],
+  "hooks": {
+    "agent_end": "自动提取对话中的实体和关系",
+    "before_agent_start": "注入相关记忆上下文"
+  },
+  "provides": {
+    "memory": {
+      "type": "graph",
+      "features": [
+        "entity-extraction",
+        "relationship-inference",
+        "multi-hop-search",
+        "context-tracking",
+        "conflict-resolution",
+        "priority-management",
+        "auto-forgetting"
+      ]
+    }
+  },
+  "readme": "README.md",
+  "changelog": "CHANGELOG.md"
+}

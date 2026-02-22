@@ -1,4 +1,10 @@
 import { createRequire } from "node:module";
+import type { Api, Context, Model } from "@mariozechner/pi-ai";
+import { complete } from "@mariozechner/pi-ai";
+import { getApiKeyForModel, requireApiKey } from "../../agents/model-auth.js";
+import { ensureOpenClawModelsJson } from "../../agents/models-config.js";
+import { discoverAuthStorage, discoverModels } from "../../agents/pi-model-discovery.js";
+import { resolveOpenClawAgentDir } from "../../agents/agent-paths.js";
 import { resolveEffectiveMessagesConfig, resolveHumanDelayConfig } from "../../agents/identity.js";
 import { createMemoryGetTool, createMemorySearchTool } from "../../agents/tools/memory-tool.js";
 import { handleSlackAction } from "../../agents/tools/slack-actions.js";
@@ -236,11 +242,82 @@ function loadWhatsAppActions() {
   return whatsappActionsPromise;
 }
 
+function createRuntimeLlm(): PluginRuntime["llm"] {
+  return {
+    complete: async (params) => {
+      const cfg = loadConfig();
+      const agentDir = resolveOpenClawAgentDir();
+      await ensureOpenClawModelsJson(cfg, agentDir);
+      const authStorage = discoverAuthStorage(agentDir);
+      const modelRegistry = discoverModels(authStorage, agentDir);
+      const model = modelRegistry.find(params.provider, params.model) as Model<Api> | null;
+
+      if (!model) {
+        throw new Error(`Unknown model: ${params.provider}/${params.model}`);
+      }
+
+      const apiKeyInfo = await getApiKeyForModel({ model, cfg, agentDir });
+      const apiKey = requireApiKey(apiKeyInfo, model.provider);
+      authStorage.setRuntimeApiKey(model.provider, apiKey);
+
+      const context: Context = {
+        messages: [
+          ...(params.systemPrompt
+            ? [{ role: "system" as const, content: params.systemPrompt, timestamp: Date.now() }]
+            : []),
+          {
+            role: "user" as const,
+            content: params.prompt,
+            timestamp: Date.now(),
+          },
+        ],
+      };
+
+      const message = await complete(model, context, {
+        apiKey,
+        maxTokens: params.maxTokens ?? 1024,
+      });
+
+      const text =
+        typeof message.content === "string"
+          ? message.content
+          : message.content
+              .filter((b: { type: string }) => b.type === "text")
+              .map((b: { type: "text"; text: string }) => b.text)
+              .join("");
+
+      return {
+        text,
+        model: model.id,
+        usage: message.usage
+          ? {
+              inputTokens: message.usage.inputTokens ?? 0,
+              outputTokens: message.usage.outputTokens ?? 0,
+            }
+          : undefined,
+      };
+    },
+    getMainModel: () => {
+      const cfg = loadConfig();
+      const primary = cfg.agents?.defaults?.model?.primary;
+      if (!primary) {
+        return null;
+      }
+      const parts = primary.split("/");
+      if (parts.length !== 2) {
+        return { provider: "openai", model: primary };
+      }
+      return { provider: parts[0], model: parts[1] };
+    },
+  };
+}
+
 export function createPluginRuntime(): PluginRuntime {
   return {
     version: resolveVersion(),
     config: createRuntimeConfig(),
     system: createRuntimeSystem(),
+    llm: createRuntimeLlm(),
     media: createRuntimeMedia(),
     tts: { textToSpeechTelephony },
     tools: createRuntimeTools(),

@@ -1,0 +1,19 @@
+{
+  "name": "@openclaw/memory-neo4j",
+  "version": "2026.2.22",
+  "private": true,
+  "description": "Neo4j 图谱记忆系统插件 - 支持实体关系提取、多跳搜索和上下文关联",
+  "type": "module",
+  "dependencies": {
+    "@sinclair/typebox": "0.34.48",
+    "neo4j-driver": "^5.25.0"
+  },
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

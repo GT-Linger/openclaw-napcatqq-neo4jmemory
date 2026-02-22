@@ -12,6 +12,7 @@ import {
   resolveGatewayPort,
   writeConfigFile,
 } from "../config/config.js";
+import { t } from "../i18n/index.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { defaultRuntime } from "../runtime.js";
 import { resolveUserPath } from "../utils.js";
@@ -441,6 +442,13 @@ export async function runOnboardingWizard(
   } else {
     const { setupSkills } = await import("../commands/onboard-skills.js");
     nextConfig = await setupSkills(nextConfig, workspaceDir, runtime, prompter);
+  }
+
+  if (opts.skipMemory) {
+    await prompter.note("Skipping memory setup.", "Memory");
+  } else {
+    const { setupMemory } = await import("../commands/onboard-memory.js");
+    nextConfig = await setupMemory(nextConfig, runtime, prompter);
   }
 
   // Setup hooks (session memory on /new)
