@@ -101,7 +101,7 @@ const TAB_ICONS: Record<Tab, IconName> = {
 };
 
 /** Tabs that have real implementations (not placeholders) */
-export const IMPLEMENTED_TABS: Set<Tab> = new Set(["overview", "chat"]);
+export const IMPLEMENTED_TABS: Set<Tab> = new Set(["overview", "chat", "skills"]);
 
 export function normalizeBasePath(basePath: string): string {
   if (!basePath) {

@@ -17,6 +17,7 @@ import "./components/agent-profile-provider.js";
 import "./components/agent-panel.js";
 import "./views/overview-view.js";
 import "./views/chat-view.js";
+import "./views/skills-view.js";
 import "./views/placeholder-view.js";
 
 declare global {
@@ -256,6 +257,10 @@ export class DashboardApp extends LitElement {
       case "chat":
         return html`
           <agent-panel mode="fullpage"></agent-panel>
+        `;
+      case "skills":
+        return html`
+          <skills-view></skills-view>
         `;
       default:
         return html`<placeholder-view .tab=${this.tab}></placeholder-view>`;
