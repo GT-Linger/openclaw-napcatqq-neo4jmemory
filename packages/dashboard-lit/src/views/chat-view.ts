@@ -8,6 +8,7 @@ import "../components/chat-bubble.js";
 import type { BubbleActions } from "../components/chat-bubble.js";
 import { icon } from "../components/icons.js";
 import { gatewayContext, type GatewayState } from "../context/gateway-context.js";
+import { privacyContext, type PrivacyState } from "../context/privacy-context.js";
 import {
   loadHistory,
   sendMessage,
@@ -167,6 +168,9 @@ export class AgentChat extends LitElement {
 
   @consume({ context: gatewayContext, subscribe: true })
   gateway!: GatewayState;
+
+  @consume({ context: privacyContext, subscribe: true })
+  privacy!: PrivacyState;
 
   @property({ type: Object }) agent!: AgentProfile;
 
@@ -1000,6 +1004,7 @@ export class AgentChat extends LitElement {
                 .isHistory=${isHistoryMsg}
                 .isLast=${isLastAssistant}
                 .isPinned=${this.pinnedMessages.has(i)}
+                .redacted=${this.privacy?.streamMode ?? false}
                 .modelTag=${msg.role === "assistant" ? modelTag(this.agent?.model) : ""}
                 .actions=${this.bubbleActions}
               ></chat-bubble>

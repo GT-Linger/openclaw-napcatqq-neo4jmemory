@@ -1,7 +1,9 @@
+import { provide } from "@lit/context";
 import { LitElement, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { icon, type IconName } from "./components/icons.js";
 import "./components/connection-status.js";
+import { privacyContext, privacyService, type PrivacyState } from "./context/privacy-context.js";
 import {
   normalizeBasePath,
   pathForTab,
@@ -23,14 +25,25 @@ declare global {
   }
 }
 
-type ThemeMode = "landingTheme" | "light" | "docsTheme";
+type ThemeMode = "landingTheme" | "light" | "dark";
 const THEME_KEY = "openclaw.dashboard.theme";
+
+/** Backward-compat: older localStorage entries stored "docsTheme" */
+const migrateLegacyTheme = (v: string | null): ThemeMode | null => {
+  if (v === "docsTheme") {
+    return "dark";
+  }
+  if (v === "landingTheme" || v === "light" || v === "dark") {
+    return v;
+  }
+  return null;
+};
 
 type ThemeOption = { id: ThemeMode; label: string; icon: string };
 const THEME_OPTIONS: ThemeOption[] = [
-  { id: "landingTheme", label: "Landing theme", icon: "layoutGrid" },
-  { id: "light", label: "Light theme", icon: "sun" },
-  { id: "docsTheme", label: "Docs theme", icon: "moon" },
+  { id: "landingTheme", label: "Landing", icon: "layoutGrid" },
+  { id: "light", label: "Light", icon: "sun" },
+  { id: "dark", label: "Dark", icon: "moon" },
 ];
 const NAV_COLLAPSED_KEY = "openclaw.dashboard.navCollapsed";
 
@@ -55,14 +68,18 @@ export class DashboardApp extends LitElement {
     return this;
   }
 
+  @provide({ context: privacyContext })
+  @state()
+  privacyState: PrivacyState = { streamMode: privacyService.streamMode };
+
   @state() tab: Tab = "overview";
   @state() basePath = "";
-  @state() theme: ThemeMode = "docsTheme";
+  @state() theme: ThemeMode = "dark";
   @state() navCollapsed = false;
   @state() private isMobile = false;
   /** Button order — only updates when the toggle collapses, so the active
    *  button doesn't jump while the picker is still open. */
-  @state() private themeOrder: ThemeMode[] = ["docsTheme", "landingTheme", "light"];
+  @state() private themeOrder: ThemeMode[] = ["dark", "landingTheme", "light"];
 
   /* ── Lifecycle ───────────────────────────────────── */
 
@@ -75,13 +92,19 @@ export class DashboardApp extends LitElement {
     this.isMobile = window.innerWidth < 768;
     window.addEventListener("popstate", this.handlePopState);
     window.addEventListener("resize", this.handleResize);
+    privacyService.addEventListener("change", this._onPrivacyChange);
   }
 
   override disconnectedCallback(): void {
     window.removeEventListener("popstate", this.handlePopState);
     window.removeEventListener("resize", this.handleResize);
+    privacyService.removeEventListener("change", this._onPrivacyChange);
     super.disconnectedCallback();
   }
+
+  private _onPrivacyChange = (): void => {
+    this.privacyState = { streamMode: privacyService.streamMode };
+  };
 
   /* ── Routing ─────────────────────────────────────── */
 
@@ -149,12 +172,8 @@ export class DashboardApp extends LitElement {
   /* ── Theme ───────────────────────────────────────── */
 
   private initTheme(): void {
-    const saved = localStorage.getItem(THEME_KEY);
-    if (saved === "landingTheme" || saved === "light" || saved === "docsTheme") {
-      this.theme = saved;
-    } else {
-      this.theme = "docsTheme";
-    }
+    const saved = migrateLegacyTheme(localStorage.getItem(THEME_KEY));
+    this.theme = saved ?? "dark";
     this.themeOrder = this.buildThemeOrder(this.theme);
     this.applyTheme(this.theme);
   }

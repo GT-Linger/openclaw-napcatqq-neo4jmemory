@@ -33,6 +33,7 @@ export class ChatBubble extends LitElement {
   @property({ type: Boolean }) isHistory = false;
   @property({ type: Boolean }) isLast = false;
   @property({ type: Boolean }) isPinned = false;
+  @property({ type: Boolean }) redacted = false;
   @property({ type: String }) modelTag = "";
   @property({ type: String }) senderName = "";
   @property({ type: Object }) actions: BubbleActions = {};
@@ -95,16 +96,19 @@ export class ChatBubble extends LitElement {
   }
 
   private renderUser() {
-    const text = extractText(this.message);
     const ts = this.timestamp;
+    const text = this.redacted ? "Message hidden in stream mode" : extractText(this.message);
     return html`
       <div class="chat-bubble chat-bubble--user ${this.isHistory ? "chat-bubble--history" : ""}">
         <div class="chat-bubble__header">
           <span class="chat-bubble__role">You</span>
           ${ts ? html`<span class="chat-bubble__ts">${ts}</span>` : nothing}
         </div>
-        <div class="chat-bubble__body">${text}</div>
-        <div class="chat-bubble__actions">
+        <div class="chat-bubble__body ${this.redacted ? "privacy-blur" : ""}">${text}</div>
+        ${
+          this.redacted
+            ? nothing
+            : html`<div class="chat-bubble__actions">
           <button class="chat-bubble__action" @click=${() => this.copyText()} title="Copy">
             ${icon("copy", { className: "icon-xs" })}
           </button>
@@ -124,14 +128,28 @@ export class ChatBubble extends LitElement {
               </button>`
               : nothing
           }
-        </div>
+        </div>`
+        }
       </div>
     `;
   }
 
   private renderAssistant() {
-    const text = extractText(this.message);
     const ts = this.timestamp;
+
+    if (this.redacted) {
+      return html`
+        <div class="chat-bubble chat-bubble--assistant ${this.isHistory ? "chat-bubble--history" : ""}">
+          <div class="chat-bubble__header">
+            <span class="chat-bubble__role">${this.senderName || "Assistant"}</span>
+            ${ts ? html`<span class="chat-bubble__ts">${ts}</span>` : nothing}
+          </div>
+          <div class="chat-bubble__body privacy-blur">Response hidden in stream mode</div>
+        </div>
+      `;
+    }
+
+    const text = extractText(this.message);
     const thinkingBlocks = extractThinking(this.message);
     const toolUses = extractToolUses(this.message);
 
@@ -195,9 +213,25 @@ export class ChatBubble extends LitElement {
   }
 
   private renderTool() {
-    const toolResults = extractToolResults(this.message);
     const toolName = this.message.toolName ?? "Tool";
     const friendly = friendlyToolName(toolName);
+    const ts = this.timestamp;
+
+    if (this.redacted) {
+      return html`
+        <div class="chat-bubble chat-bubble--tool">
+          <div class="chat-bubble__header">
+            <span class="chat-bubble__role chat-bubble__role--tool">
+              ${icon("terminal", { className: "icon-xs" })} ${friendly}
+            </span>
+            ${ts ? html`<span class="chat-bubble__ts">${ts}</span>` : nothing}
+          </div>
+          <div class="chat-bubble__body privacy-blur" style="color:var(--muted)">[tool result hidden]</div>
+        </div>
+      `;
+    }
+
+    const toolResults = extractToolResults(this.message);
 
     if (toolResults.length > 0) {
       return html`
@@ -215,7 +249,6 @@ export class ChatBubble extends LitElement {
     }
 
     const text = extractText(this.message);
-    const ts = this.timestamp;
     return html`
       <div class="chat-bubble chat-bubble--tool">
         <div class="chat-bubble__header">

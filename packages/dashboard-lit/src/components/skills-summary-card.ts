@@ -132,7 +132,7 @@ export class SkillsSummaryCard extends LitElement {
     const moreCount = Math.max(0, missingDeps.length - 3) + Math.max(0, blocked.length - 3);
 
     return html`
-      <div style="margin-top:0.5rem;">
+      <div style="margin-top:0.5rem;" class=${this.redacted ? "privacy-blur" : ""}>
         <div class="muted" style="font-size:0.68rem;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.04em;">
           Needs Attention
         </div>
@@ -167,7 +167,7 @@ export class SkillsSummaryCard extends LitElement {
     const display = enabled.slice(0, 5);
 
     return html`
-      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:0.5rem;">
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:0.5rem;" class=${this.redacted ? "privacy-blur" : ""}>
         ${display.map((s) => html`<span class="count-badge">${s.emoji ?? ""} ${s.name}</span>`)}
         ${
           enabled.length > 5

@@ -6,6 +6,7 @@ import type { MobileTab } from "../components/bottom-tabs.js";
 import type { EventLog } from "../components/event-log.js";
 import { icon } from "../components/icons.js";
 import { gatewayContext, type GatewayState } from "../context/gateway-context.js";
+import { privacyContext, privacyService, type PrivacyState } from "../context/privacy-context.js";
 import { loadCronJobs, loadCronStatus } from "../controllers/cron.js";
 import { loadHealth } from "../controllers/health.js";
 import { loadLogsTail } from "../controllers/logs.js";
@@ -38,15 +39,20 @@ import type {
   AttentionItem,
 } from "../types/dashboard.js";
 
-const STREAM_MODE_KEY = "claw-dash:stream-mode";
-
 @customElement("overview-view")
 export class OverviewView extends LitElement {
   @consume({ context: gatewayContext, subscribe: true })
   gateway!: GatewayState;
 
+  @consume({ context: privacyContext, subscribe: true })
+  privacy!: PrivacyState;
+
   override createRenderRoot() {
     return this;
+  }
+
+  private get streamMode(): boolean {
+    return this.privacy?.streamMode ?? false;
   }
 
   // ── State ──────────────────────────────────────────
@@ -60,7 +66,6 @@ export class OverviewView extends LitElement {
   @state() private logCursor = 0;
   @state() private usageDays = 3;
   @state() private paletteOpen = false;
-  @state() private streamMode = false;
   @state() private mobileTab: MobileTab = "home";
   @state() private attentionItems: AttentionItem[] = [];
 
@@ -78,7 +83,6 @@ export class OverviewView extends LitElement {
   // ── Lifecycle ──────────────────────────────────────
   override connectedCallback(): void {
     super.connectedCallback();
-    this.streamMode = localStorage.getItem(STREAM_MODE_KEY) === "true";
     this.tokenInput = loadStoredToken();
     const params = new URLSearchParams(window.location.search);
     const tab = params.get("tab");
@@ -260,13 +264,6 @@ export class OverviewView extends LitElement {
     }
 
     return items;
-  }
-
-  // ── Stream Mode ────────────────────────────────────
-
-  private toggleStreamMode() {
-    this.streamMode = !this.streamMode;
-    localStorage.setItem(STREAM_MODE_KEY, String(this.streamMode));
   }
 
   // ── Event Handlers ─────────────────────────────────
@@ -515,7 +512,7 @@ export class OverviewView extends LitElement {
           this.streamMode
             ? html`<div class="overview-banner overview-banner--stream">
               ${icon("eyeOff", { className: "icon-xs" })} Stream mode — values redacted
-              <button class="btn-ghost" style="margin-left:auto;font-size:0.72rem;" @click=${() => this.toggleStreamMode()}>
+              <button class="btn-ghost" style="margin-left:auto;font-size:0.72rem;" @click=${() => privacyService.toggle()}>
                 Disable
               </button>
             </div>`
@@ -570,7 +567,7 @@ export class OverviewView extends LitElement {
 
             <div class="overview-bottom-grid">
               <event-log .redacted=${this.streamMode}></event-log>
-              <attention-center .items=${this.attentionItems}></attention-center>
+              <attention-center .items=${this.attentionItems} .redacted=${this.streamMode}></attention-center>
             </div>
 
             <log-tail

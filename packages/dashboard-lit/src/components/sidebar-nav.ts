@@ -2,6 +2,7 @@ import { consume } from "@lit/context";
 import { LitElement, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { gatewayContext, type GatewayState } from "../context/gateway-context.js";
+import { privacyContext, privacyService, type PrivacyState } from "../context/privacy-context.js";
 import { parseOverviewSnapshot } from "../controllers/overview.js";
 import {
   TAB_GROUPS,
@@ -23,6 +24,9 @@ export class SidebarNav extends LitElement {
 
   @consume({ context: gatewayContext, subscribe: true })
   gateway!: GatewayState;
+
+  @consume({ context: privacyContext, subscribe: true })
+  privacy!: PrivacyState;
 
   @property({ type: String }) activeTab: Tab = "overview";
   @property({ type: String }) basePath = "";
@@ -129,6 +133,18 @@ export class SidebarNav extends LitElement {
         </nav>
 
         <div class="sidebar-footer">
+          <button
+            class="nav-item nav-item--stream-toggle ${this.privacy?.streamMode ? "nav-item--stream-active" : ""}"
+            @click=${() => privacyService.toggle()}
+            title=${this.privacy?.streamMode ? "Stream mode ON — click to show data" : "Hide sensitive data"}
+          >
+            <span class="nav-item__icon">${icon(this.privacy?.streamMode ? "eyeOff" : "eye")}</span>
+            ${
+              !this.collapsed
+                ? html`<span class="nav-item__text">${this.privacy?.streamMode ? "Stream Mode ON" : "Stream Mode"}</span>`
+                : nothing
+            }
+          </button>
           <a
             class="nav-item nav-item--external"
             href="https://docs.openclaw.ai"

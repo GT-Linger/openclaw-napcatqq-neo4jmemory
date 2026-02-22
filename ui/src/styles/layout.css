@@ -5,7 +5,7 @@
 .shell {
   --shell-pad: 16px;
   --shell-gap: 16px;
-  --shell-nav-width: 220px;
+  --shell-nav-width: 240px;
   --shell-topbar-height: 56px;
   --shell-focus-duration: 200ms;
   --shell-focus-ease: var(--ease-out);
@@ -100,11 +100,11 @@
 }
 
 .topbar-status .pill {
-  padding: 6px 10px;
+  padding: 6px 12px;
   gap: 6px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
-  height: 32px;
+  height: 34px;
   box-sizing: border-box;
 }
 
@@ -223,8 +223,8 @@
 }
 
 .sidebar-brand__logo {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
 }
 
@@ -242,7 +242,7 @@
 }
 
 .sidebar-brand__title {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1.1;
@@ -251,8 +251,8 @@
 }
 
 .sidebar-collapse-btn {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -275,8 +275,8 @@
 }
 
 .sidebar-collapse-btn svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   stroke: currentColor;
   fill: none;
   stroke-width: 1.5px;
@@ -325,7 +325,7 @@
   gap: 8px;
   width: 100%;
   padding: 6px 10px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--muted);
   margin-bottom: 4px;
@@ -377,7 +377,7 @@
   align-items: center;
   justify-content: flex-start;
   gap: 10px;
-  padding: 8px 10px;
+  padding: 9px 12px;
   border-radius: var(--radius-md);
   border: 1px solid transparent;
   background: transparent;
@@ -392,8 +392,8 @@
 }
 
 .nav-item__icon {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -403,8 +403,8 @@
 }
 
 .nav-item__icon svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   stroke: currentColor;
   fill: none;
   stroke-width: 1.5px;
@@ -413,7 +413,7 @@
 }
 
 .nav-item__text {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
 }
@@ -473,7 +473,7 @@
 }
 
 .sidebar-version__text {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--muted);
   letter-spacing: 0.02em;
@@ -542,7 +542,7 @@
 }
 
 .page-title {
-  font-size: 26px;
+  font-size: 28px;
   font-weight: 700;
   letter-spacing: -0.035em;
   line-height: 1.15;
@@ -551,7 +551,7 @@
 
 .page-sub {
   color: var(--muted);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 400;
   margin-top: 6px;
   letter-spacing: -0.01em;
