@@ -70,11 +70,49 @@ cp docs/reference/AGENTS.default.md ~/.openclaw/workspace/AGENTS.md
 
 ## 记忆系统（推荐）
 
+OpenClaw 支持两种记忆系统：
+
+### 文件记忆（默认）
+
 - 每日日志：`memory/YYYY-MM-DD.md`（如需要请创建 `memory/`）。
 - 长期记忆：`memory.md` 用于持久的事实、偏好和决定。
 - 会话开始时，读取今天 + 昨天 + `memory.md`（如果存在）。
 - 捕获：决定、偏好、约束、待办事项。
 - 除非明确要求，否则避免存储密钥。
+
+### Neo4j 图谱记忆（可选）
+
+当配置 `plugins.slots.memory = "memory-neo4j"` 时，智能体使用 Neo4j 图数据库进行结构化记忆：
+
+- **实体管理**：存储和检索实体（人物、项目、事件等）
+- **关系追踪**：捕获和查询实体之间的关系
+- **多跳搜索**：遍历图谱查找关联信息
+- **自动提取**：从对话中自动提取实体和关系
+- **上下文注入**：在 AI 响应前自动召回相关记忆
+- **记忆衰减**：可配置的遗忘机制，淘汰过时信息
+
+配置示例：
+
+```json5
+{
+  plugins: {
+    slots: { memory: "memory-neo4j" },
+    entries: {
+      "memory-neo4j": {
+        enabled: true,
+        connection: {
+          uri: "bolt://localhost:7687",
+          username: "neo4j",
+          password: "your-password",
+        },
+        lifecycle: { autoCapture: true, autoRecall: true },
+      },
+    },
+  },
+}
+```
+
+使用 Neo4j 记忆时，智能体使用 `memory_graph_search`、`memory_entity_add` 和 `memory_relation_add` 工具，而不是读写记忆文件。
 
 ## 工具和 Skills
 

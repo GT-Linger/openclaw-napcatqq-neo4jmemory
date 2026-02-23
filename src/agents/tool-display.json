@@ -294,6 +294,21 @@
       "title": "Memory Get",
       "detailKeys": ["path", "from", "lines"]
     },
+    "memory_graph_search": {
+      "emoji": "🔍",
+      "title": "Graph Search",
+      "detailKeys": ["query", "entityType", "maxHops"]
+    },
+    "memory_entity_add": {
+      "emoji": "➕",
+      "title": "Add Entity",
+      "detailKeys": ["name", "type"]
+    },
+    "memory_relation_add": {
+      "emoji": "🔗",
+      "title": "Add Relation",
+      "detailKeys": ["from", "to", "relationType"]
+    },
     "web_search": {
       "emoji": "🔎",
       "title": "Web Search",

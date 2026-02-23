@@ -95,7 +95,7 @@ openclaw sandbox explain --json
 - `group:runtime`：`exec`、`bash`、`process`
 - `group:fs`：`read`、`write`、`edit`、`apply_patch`
 - `group:sessions`：`sessions_list`、`sessions_history`、`sessions_send`、`sessions_spawn`、`session_status`
-- `group:memory`：`memory_search`、`memory_get`
+- `group:memory`：`memory_search`、`memory_get`、`memory_graph_search`、`memory_entity_add`、`memory_relation_add`
 - `group:ui`：`browser`、`canvas`
 - `group:automation`：`cron`、`gateway`
 - `group:messaging`：`message`

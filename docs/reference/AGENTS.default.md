@@ -64,11 +64,49 @@ cp docs/reference/AGENTS.default.md ~/.openclaw/workspace/AGENTS.md
 
 ## Memory system (recommended)
 
+OpenClaw supports two memory systems:
+
+### File-based Memory (default)
+
 - Daily log: `memory/YYYY-MM-DD.md` (create `memory/` if needed).
 - Long-term memory: `memory.md` for durable facts, preferences, and decisions.
 - On session start, read today + yesterday + `memory.md` if present.
 - Capture: decisions, preferences, constraints, open loops.
 - Avoid secrets unless explicitly requested.
+
+### Neo4j Graph Memory (optional)
+
+When configured with `plugins.slots.memory = "memory-neo4j"`, the agent uses a Neo4j graph database for structured memory:
+
+- **Entity Management**: Store and retrieve entities (people, projects, events, etc.)
+- **Relationship Tracking**: Capture and query relationships between entities
+- **Multi-hop Search**: Traverse the graph to find connected information
+- **Auto Extraction**: Automatically extract entities and relations from conversations
+- **Context Injection**: Automatically recall relevant memories before AI responses
+- **Memory Decay**: Configurable forgetting mechanism to retire stale information
+
+Configuration example:
+
+```json5
+{
+  plugins: {
+    slots: { memory: "memory-neo4j" },
+    entries: {
+      "memory-neo4j": {
+        enabled: true,
+        connection: {
+          uri: "bolt://localhost:7687",
+          username: "neo4j",
+          password: "your-password",
+        },
+        lifecycle: { autoCapture: true, autoRecall: true },
+      },
+    },
+  },
+}
+```
+
+With Neo4j memory, the agent uses tools `memory_graph_search`, `memory_entity_add`, and `memory_relation_add` instead of reading/writing memory files.
 
 ## Tools & skills
 

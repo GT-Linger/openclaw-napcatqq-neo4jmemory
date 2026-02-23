@@ -48,21 +48,36 @@ function buildMemorySection(params: {
   if (params.isMinimal) {
     return [];
   }
-  if (!params.availableTools.has("memory_search") && !params.availableTools.has("memory_get")) {
+  const hasFileMemory =
+    params.availableTools.has("memory_search") || params.availableTools.has("memory_get");
+  const hasGraphMemory = params.availableTools.has("memory_graph_search");
+  if (!hasFileMemory && !hasGraphMemory) {
     return [];
   }
-  const lines = [
-    "## Memory Recall",
-    "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run memory_search on MEMORY.md + memory/*.md; then use memory_get to pull only the needed lines. If low confidence after search, say you checked.",
-  ];
-  if (params.citationsMode === "off") {
+  const lines: string[] = [];
+  if (hasGraphMemory) {
     lines.push(
-      "Citations are disabled: do not mention file paths or line numbers in replies unless the user explicitly asks.",
+      "## Memory Recall (Graph)",
+      "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run memory_graph_search to find relevant entities and their relationships in the knowledge graph.",
+      "- Use memory_entity_add to store new entities (people, projects, events, etc.)",
+      "- Use memory_relation_add to create relationships between entities",
+      "- Use memory_graph_search with includeRelations=true to traverse connections",
+      "If low confidence after search, say you checked.",
     );
-  } else {
+  } else if (hasFileMemory) {
     lines.push(
-      "Citations: include Source: <path#line> when it helps the user verify memory snippets.",
+      "## Memory Recall",
+      "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run memory_search on MEMORY.md + memory/*.md; then use memory_get to pull only the needed lines. If low confidence after search, say you checked.",
     );
+    if (params.citationsMode === "off") {
+      lines.push(
+        "Citations are disabled: do not mention file paths or line numbers in replies unless the user explicitly asks.",
+      );
+    } else {
+      lines.push(
+        "Citations: include Source: <path#line> when it helps the user verify memory snippets.",
+      );
+    }
   }
   lines.push("");
   return lines;
