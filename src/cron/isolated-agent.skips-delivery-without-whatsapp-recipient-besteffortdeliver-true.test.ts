@@ -1,9 +1,9 @@
 import "./isolated-agent.mocks.js";
 import fs from "node:fs/promises";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { runEmbeddedPiAgent } from "../agents/pi-embedded.js";
 import { runSubagentAnnounceFlow } from "../agents/subagent-announce.js";
 import type { CliDeps } from "../cli/deps.js";
+import { createCliDeps, mockAgentPayloads } from "./isolated-agent.delivery.test-helpers.js";
 import { runCronIsolatedAgentTurn } from "./isolated-agent.js";
 import {
   makeCfg,
@@ -12,32 +12,6 @@ import {
   writeSessionStore,
 } from "./isolated-agent.test-harness.js";
 import { setupIsolatedAgentTurnMocks } from "./isolated-agent.test-setup.js";
-
-function createCliDeps(overrides: Partial<CliDeps> = {}): CliDeps {
-  return {
-    sendMessageSlack: vi.fn(),
-    sendMessageWhatsApp: vi.fn(),
-    sendMessageTelegram: vi.fn(),
-    sendMessageDiscord: vi.fn(),
-    sendMessageSignal: vi.fn(),
-    sendMessageIMessage: vi.fn(),
-    ...overrides,
-  };
-}
-
-function mockAgentPayloads(
-  payloads: Array<Record<string, unknown>>,
-  extra: Partial<Awaited<ReturnType<typeof runEmbeddedPiAgent>>> = {},
-): void {
-  vi.mocked(runEmbeddedPiAgent).mockResolvedValue({
-    payloads,
-    meta: {
-      durationMs: 5,
-      agentMeta: { sessionId: "s", provider: "p", model: "m" },
-    },
-    ...extra,
-  });
-}
 
 async function runTelegramAnnounceTurn(params: {
   home: string;
@@ -184,7 +158,7 @@ describe("runCronIsolatedAgentTurn", () => {
     });
   });
 
-  it("passes resolved threadId into shared subagent announce flow", async () => {
+  it("routes threaded announce targets through direct delivery", async () => {
     await withTempCronHome(async (home) => {
       const storePath = await writeSessionStore(home, { lastProvider: "webchat", lastTo: "" });
       await fs.writeFile(
@@ -214,13 +188,16 @@ describe("runCronIsolatedAgentTurn", () => {
       });
 
       expect(res.status).toBe("ok");
-      expect(runSubagentAnnounceFlow).toHaveBeenCalledTimes(1);
-      const announceArgs = vi.mocked(runSubagentAnnounceFlow).mock.calls[0]?.[0] as
-        | { requesterOrigin?: { threadId?: string | number; channel?: string; to?: string } }
-        | undefined;
-      expect(announceArgs?.requesterOrigin?.channel).toBe("telegram");
-      expect(announceArgs?.requesterOrigin?.to).toBe("123");
-      expect(announceArgs?.requesterOrigin?.threadId).toBe(42);
+      expect(res.delivered).toBe(true);
+      expect(runSubagentAnnounceFlow).not.toHaveBeenCalled();
+      expect(deps.sendMessageTelegram).toHaveBeenCalledTimes(1);
+      expect(deps.sendMessageTelegram).toHaveBeenCalledWith(
+        "123",
+        "Final weather summary",
+        expect.objectContaining({
+          messageThreadId: 42,
+        }),
+      );
     });
   });
 
