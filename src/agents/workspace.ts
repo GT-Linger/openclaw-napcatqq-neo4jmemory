@@ -6,6 +6,138 @@ import { runCommandWithTimeout } from "../process/exec.js";
 import { isCronSessionKey, isSubagentSessionKey } from "../routing/session-key.js";
 import { resolveUserPath } from "../utils.js";
 import { resolveWorkspaceTemplateDir } from "./workspace-templates.js";
+import { getLocale } from "../i18n/index.js";
+
+type MemorySystemType = "file" | "graph" | "none";
+
+function buildMemorySectionForTemplate(memoryType: MemorySystemType, locale: string): string {
+  const isZhCN = locale === "zh-CN" || locale === "zh-TW";
+
+  if (memoryType === "none") {
+    return isZhCN
+      ? "## 记忆\n\n记忆系统未启用。"
+      : "## Memory\n\nMemory system is not enabled.";
+  }
+
+  if (memoryType === "graph") {
+    if (isZhCN) {
+      return `## 记忆召回（图谱）
+
+在回答任何关于之前工作、决策、日期、人员偏好或待办事项的问题时：运行 memory_graph_search 查找知识图谱中的相关实体及其关系。
+
+### 存储规则
+- 使用 memory_entity_add 存储或更新实体（人物、项目、事件等）
+- 使用 memory_relation_add 创建实体之间的关系
+- 使用 memory_graph_search 的 includeRelations=true 参数遍历关联关系
+- 程序会自动从对话中提取实体和关系（如果启用 autoCapture）
+- 程序会在响应前自动召回相关记忆（如果启用 autoRecall）
+
+### 实体智能更新
+- 当添加的实体已存在时（相似度 >= 80%），会自动更新现有实体的内容，而不是创建重复实体
+- 实体会记录创建时间 (createdAt) 和更新时间 (updatedAt)
+- 可以通过设置 confidence 属性控制实体匹配的敏感度
+
+### 实体类型
+- Person: 人物
+- Project: 项目
+- Event: 事件
+- Task: 任务
+- Preference: 偏好
+- Decision: 决策
+- Note: 笔记
+- Custom: 自定义类型
+
+如果搜索后置信度较低，说明你已检查过。`;
+    } else {
+      return `## Memory Recall (Graph)
+
+Before answering anything about prior work, decisions, dates, people, preferences, or todos: run memory_graph_search to find relevant entities and their relationships in the knowledge graph.
+
+### Storage Rules
+- Use memory_entity_add to store or update entities (people, projects, events, etc.)
+- Use memory_relation_add to create relationships between entities
+- Use memory_graph_search with includeRelations=true to traverse connections
+- The program will automatically extract entities and relationships from conversations (if autoCapture is enabled)
+- The program will automatically recall relevant memories before responses (if autoRecall is enabled)
+
+### Smart Entity Update
+- When adding an entity that already exists (similarity >= 80%), it will automatically update the existing entity's content instead of creating duplicates
+- Entities track creation time (createdAt) and update time (updatedAt)
+- You can control entity matching sensitivity by setting the confidence attribute
+
+### Entity Types
+- Person: People
+- Project: Projects
+- Event: Events
+- Task: Tasks
+- Preference: Preferences
+- Decision: Decisions
+- Note: Notes
+- Custom: Custom types
+
+If low confidence after search, say you checked.`;
+    }
+  }
+
+  if (isZhCN) {
+    return `## 记忆召回
+
+在回答任何关于之前工作、决策、日期、人员偏好或待办事项的问题时：运行 memory_search 搜索 MEMORY.md 和 memory/*.md；然后使用 memory_get 仅拉取需要的行。
+
+### 存储规则
+- 每日日志：使用 \`memory/YYYY-MM-DD.md\` 格式记录当天发生的事件
+- 长期记忆：使用 \`MEMORY.md\` 存储持久的事实、偏好和重要决定
+- 会话开始时，读取今天 + 昨天 + \`MEMORY.md\`（如果存在）
+- 捕获内容：决定、偏好、约束、待办事项
+- 除非明确要求，否则避免存储密钥等敏感信息
+
+### 引用规则
+引用：当它有助于用户验证记忆片段时，包含来源信息 <路径#行号>。`;
+  } else {
+    return `## Memory Recall
+
+Before answering anything about prior work, decisions, dates, people, preferences, or todos: run memory_search on MEMORY.md + memory/*.md; then use memory_get to pull only the needed lines.
+
+### Storage Rules
+- Daily logs: Use \`memory/YYYY-MM-DD.md\` format to record events of the day
+- Long-term memory: Use \`MEMORY.md\` for persistent facts, preferences, and important decisions
+- At session start, read today + yesterday + \`MEMORY.md\` (if exists)
+- Capture: decisions, preferences, constraints, todos
+- Unless explicitly asked, avoid storing sensitive information like keys
+
+### Citation Rules
+Citations: include Source: <path#line> when it helps the user verify memory snippets.`;
+  }
+}
+
+function injectMemorySectionIntoAgents(agentsContent: string, memorySection: string): string {
+  const memoryHeader = "## 记忆";
+  const memoryHeaderEn = "## Memory";
+  const placeholder = "程序会根据配置自动选择合适的记忆系统。具体使用方式请参考系统自动注入的提示。";
+  const placeholderEn = "The program will automatically select the appropriate memory system based on your configuration. Refer to the system-injected prompts for specific usage instructions.";
+
+  let result = agentsContent;
+
+  if (result.includes(memoryHeader)) {
+    const regex = new RegExp(
+      `${memoryHeader}[\\s\\S]*?(?=\\n## |\\n# |$)`.replace(/\//g, "\\/"),
+      "m"
+    );
+    result = result.replace(regex, memorySection);
+  } else if (result.includes(memoryHeaderEn)) {
+    const regex = new RegExp(
+      `${memoryHeaderEn}[\\s\\S]*?(?=\\n## |\\n# |$)`.replace(/\//g, "\\/"),
+      "m"
+    );
+    result = result.replace(regex, memorySection);
+  } else if (result.includes(placeholder)) {
+    result = result.replace(placeholder, memorySection);
+  } else if (result.includes(placeholderEn)) {
+    result = result.replace(placeholderEn, memorySection);
+  }
+
+  return result;
+}
 
 export function resolveDefaultAgentWorkspaceDir(
   env: NodeJS.ProcessEnv = process.env,
@@ -160,6 +292,14 @@ async function writeFileIfMissing(filePath: string, content: string): Promise<bo
   }
 }
 
+async function writeFileIfMissingOrOverwrite(filePath: string, content: string, overwrite: boolean): Promise<boolean> {
+  if (overwrite) {
+    await fs.writeFile(filePath, content, { encoding: "utf-8" });
+    return true;
+  }
+  return writeFileIfMissing(filePath, content);
+}
+
 async function fileExists(filePath: string): Promise<boolean> {
   try {
     await fs.access(filePath);
@@ -284,9 +424,24 @@ async function ensureGitRepo(dir: string, isBrandNewWorkspace: boolean) {
   }
 }
 
+export type { MemorySystemType };
+
+export function resolveMemorySystemType(config: { plugins?: { slots?: { memory?: string } } }): MemorySystemType {
+  const memoryPlugin = config.plugins?.slots?.memory;
+  if (!memoryPlugin || memoryPlugin === "none") {
+    return "none";
+  }
+  if (memoryPlugin === "memory-neo4j") {
+    return "graph";
+  }
+  return "file";
+}
+
 export async function ensureAgentWorkspace(params?: {
   dir?: string;
   ensureBootstrapFiles?: boolean;
+  memoryType?: MemorySystemType;
+  forceOverwrite?: boolean;
 }): Promise<{
   dir: string;
   agentsPath?: string;
@@ -329,13 +484,19 @@ export async function ensureAgentWorkspace(params?: {
     return existing.every((v) => !v);
   })();
 
-  const agentsTemplate = await loadTemplate(DEFAULT_AGENTS_FILENAME);
+  const agentsTemplateRaw = await loadTemplate(DEFAULT_AGENTS_FILENAME);
+  const locale = getLocale();
+  const memoryType = params?.memoryType ?? "file";
+  const memorySection = buildMemorySectionForTemplate(memoryType, locale);
+  const agentsTemplate = injectMemorySectionIntoAgents(agentsTemplateRaw, memorySection);
+
   const soulTemplate = await loadTemplate(DEFAULT_SOUL_FILENAME);
   const toolsTemplate = await loadTemplate(DEFAULT_TOOLS_FILENAME);
   const identityTemplate = await loadTemplate(DEFAULT_IDENTITY_FILENAME);
   const userTemplate = await loadTemplate(DEFAULT_USER_FILENAME);
   const heartbeatTemplate = await loadTemplate(DEFAULT_HEARTBEAT_FILENAME);
-  await writeFileIfMissing(agentsPath, agentsTemplate);
+  const forceOverwrite = params?.forceOverwrite ?? false;
+  await writeFileIfMissingOrOverwrite(agentsPath, agentsTemplate, forceOverwrite);
   await writeFileIfMissing(soulPath, soulTemplate);
   await writeFileIfMissing(toolsPath, toolsTemplate);
   await writeFileIfMissing(identityPath, identityTemplate);

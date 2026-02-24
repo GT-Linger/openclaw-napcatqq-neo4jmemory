@@ -451,6 +451,14 @@ export async function runOnboardingWizard(
     nextConfig = await setupMemory(nextConfig, runtime, prompter);
   }
 
+  // Re-write AGENTS.md with memory system config after memory setup
+  const { resolveMemorySystemType } = await import("../agents/workspace.js");
+  await onboardHelpers.ensureWorkspaceAndSessions(workspaceDir, runtime, {
+    skipBootstrap: Boolean(nextConfig.agents?.defaults?.skipBootstrap),
+    memoryType: resolveMemorySystemType(nextConfig),
+    forceOverwrite: true,
+  });
+
   if (opts.skipAgents) {
     await prompter.note("Skipping multi-agent setup.", "Multi-agent");
   } else {

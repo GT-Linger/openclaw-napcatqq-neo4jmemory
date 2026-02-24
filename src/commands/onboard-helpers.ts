@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { inspect } from "node:util";
 import { cancel, isCancel } from "@clack/prompts";
-import { DEFAULT_AGENT_WORKSPACE_DIR, ensureAgentWorkspace } from "../agents/workspace.js";
+import { DEFAULT_AGENT_WORKSPACE_DIR, ensureAgentWorkspace, resolveMemorySystemType } from "../agents/workspace.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { CONFIG_PATH } from "../config/config.js";
 import { resolveAgentModelPrimaryValue } from "../config/model-input.js";
@@ -289,11 +289,13 @@ export async function openUrlInBackground(url: string): Promise<boolean> {
 export async function ensureWorkspaceAndSessions(
   workspaceDir: string,
   runtime: RuntimeEnv,
-  options?: { skipBootstrap?: boolean; agentId?: string },
+  options?: { skipBootstrap?: boolean; agentId?: string; memoryType?: "file" | "graph" | "none"; forceOverwrite?: boolean },
 ) {
   const ws = await ensureAgentWorkspace({
     dir: workspaceDir,
     ensureBootstrapFiles: !options?.skipBootstrap,
+    memoryType: options?.memoryType ?? "file",
+    forceOverwrite: options?.forceOverwrite ?? false,
   });
   runtime.log(`Workspace OK: ${shortenHomePath(ws.dir)}`);
   const sessionsDir = resolveSessionTranscriptsDirForAgent(options?.agentId);

@@ -108,6 +108,53 @@ Configuration example:
 
 With Neo4j memory, the agent uses tools `memory_graph_search`, `memory_entity_add`, and `memory_relation_add` instead of reading/writing memory files.
 
+## 🤖 Subagent Usage Guidelines
+
+When launching a subagent (`sessions_spawn`) to execute a task, always use the `label` parameter to mark the task name, so you can accurately distinguish different tasks when results come back.
+
+**Why it matters:**
+
+- Subagent tasks are **non-blocking** and can run multiple tasks in parallel
+- When multiple subagent tasks run simultaneously, you need `label` to distinguish each task's results
+- Results returned will carry the `label` identifier, helping you accurately deliver results to the user
+
+**Usage examples:**
+
+```json
+{
+  "tool": "sessions_spawn",
+  "parameters": {
+    "task": "Analyze today's sales data",
+    "label": "Sales Data Analysis"
+  }
+}
+```
+
+```json
+{
+  "tool": "sessions_spawn",
+  "parameters": {
+    "task": "Generate monthly report",
+    "label": "Monthly Report Generation"
+  }
+}
+```
+
+**Result example:**
+
+When the subagent completes, the announcement message will show:
+
+```
+✅ Subagent main completed this task
+
+Result:
+[analysis result...]
+
+A subagent task "Sales Data Analysis" just completed successfully.
+```
+
+This allows you to clearly identify which original task each result corresponds to.
+
 ## Tools & skills
 
 - Tools live in skills; follow each skill’s `SKILL.md` when you need it.

@@ -114,6 +114,53 @@ OpenClaw 支持两种记忆系统：
 
 使用 Neo4j 记忆时，智能体使用 `memory_graph_search`、`memory_entity_add` 和 `memory_relation_add` 工具，而不是读写记忆文件。
 
+## 🤖 子智能体使用规范
+
+当需要启动子智能体（`sessions_spawn`）执行任务时，务必使用 `label` 参数标记任务名称，以便在结果返回时准确区分不同任务。
+
+**为什么重要：**
+
+- 子智能体任务是**非阻塞**的，可以并行运行多个任务
+- 当多个子智能体任务同时运行时，需要通过 `label` 区分每个任务的结果
+- 结果返回时会带上 `label` 标识，帮助你准确将结果传达给用户
+
+**使用示例：**
+
+```json
+{
+  "tool": "sessions_spawn",
+  "parameters": {
+    "task": "分析今天的销售数据",
+    "label": "销售数据分析"
+  }
+}
+```
+
+```json
+{
+  "tool": "sessions_spawn",
+  "parameters": {
+    "task": "生成月度报告",
+    "label": "月度报告生成"
+  }
+}
+```
+
+**返回结果示例：**
+
+当子智能体完成时，通告消息会显示：
+
+```
+✅ Subagent main completed this task
+
+Result:
+[分析结果...]
+
+A subagent task "销售数据分析" just completed successfully.
+```
+
+这样你可以清晰区分每个任务的结果对应的原始任务是什么。
+
 ## 工具和 Skills
 
 - 工具存在于 Skills 中；需要时遵循每个 Skill 的 `SKILL.md`。

@@ -1,7 +1,6 @@
 import { createHmac, createHash } from "node:crypto";
 import type { ReasoningLevel, ThinkLevel } from "../auto-reply/thinking.js";
 import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
-import type { MemoryCitationsMode } from "../config/types.memory.js";
 import { listDeliverableMessageChannels } from "../utils/message-channel.js";
 import type { ResolvedTimeFormat } from "./date-time.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
@@ -32,49 +31,6 @@ function buildSkillsSection(params: { skillsPrompt?: string; readToolName: strin
     trimmed,
     "",
   ];
-}
-
-function buildMemorySection(params: {
-  isMinimal: boolean;
-  availableTools: Set<string>;
-  citationsMode?: MemoryCitationsMode;
-}) {
-  if (params.isMinimal) {
-    return [];
-  }
-  const hasFileMemory =
-    params.availableTools.has("memory_search") || params.availableTools.has("memory_get");
-  const hasGraphMemory = params.availableTools.has("memory_graph_search");
-  if (!hasFileMemory && !hasGraphMemory) {
-    return [];
-  }
-  const lines: string[] = [];
-  if (hasGraphMemory) {
-    lines.push(
-      "## Memory Recall (Graph)",
-      "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run memory_graph_search to find relevant entities and their relationships in the knowledge graph.",
-      "- Use memory_entity_add to store new entities (people, projects, events, etc.)",
-      "- Use memory_relation_add to create relationships between entities",
-      "- Use memory_graph_search with includeRelations=true to traverse connections",
-      "If low confidence after search, say you checked.",
-    );
-  } else if (hasFileMemory) {
-    lines.push(
-      "## Memory Recall",
-      "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run memory_search on MEMORY.md + memory/*.md; then use memory_get to pull only the needed lines. If low confidence after search, say you checked.",
-    );
-    if (params.citationsMode === "off") {
-      lines.push(
-        "Citations are disabled: do not mention file paths or line numbers in replies unless the user explicitly asks.",
-      );
-    } else {
-      lines.push(
-        "Citations: include Source: <path#line> when it helps the user verify memory snippets.",
-      );
-    }
-  }
-  lines.push("");
-  return lines;
 }
 
 function buildUserIdentitySection(ownerLine: string | undefined, isMinimal: boolean) {
@@ -244,7 +200,6 @@ export function buildAgentSystemPrompt(params: {
     level: "minimal" | "extensive";
     channel: string;
   };
-  memoryCitationsMode?: MemoryCitationsMode;
 }) {
   const coreToolSummaries: Record<string, string> = {
     read: "Read file contents",
@@ -405,11 +360,6 @@ export function buildAgentSystemPrompt(params: {
     skillsPrompt,
     readToolName,
   });
-  const memorySection = buildMemorySection({
-    isMinimal,
-    availableTools,
-    citationsMode: params.memoryCitationsMode,
-  });
   const docsSection = buildDocsSection({
     docsPath: params.docsPath,
     isMinimal,
@@ -470,7 +420,6 @@ export function buildAgentSystemPrompt(params: {
     "If unsure, ask the user to run `openclaw help` (or `openclaw gateway --help`) and paste the output.",
     "",
     ...skillsSection,
-    ...memorySection,
     // Skip self-update for subagent/none modes
     hasGateway && !isMinimal ? "## OpenClaw Self-Update" : "",
     hasGateway && !isMinimal
