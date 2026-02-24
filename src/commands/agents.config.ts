@@ -10,6 +10,7 @@ import {
   loadAgentIdentityFromWorkspace,
   parseIdentityMarkdown as parseIdentityMarkdownFile,
 } from "../agents/identity-file.js";
+import type { AgentConfig } from "../config/types.agents.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 
@@ -131,6 +132,9 @@ export function applyAgentConfig(
     workspace?: string;
     agentDir?: string;
     model?: string;
+    identity?: AgentConfig["identity"];
+    subagents?: AgentConfig["subagents"];
+    tools?: AgentConfig["tools"];
   },
 ): OpenClawConfig {
   const agentId = normalizeAgentId(params.agentId);
@@ -144,6 +148,9 @@ export function applyAgentConfig(
     ...(params.workspace ? { workspace: params.workspace } : {}),
     ...(params.agentDir ? { agentDir: params.agentDir } : {}),
     ...(params.model ? { model: params.model } : {}),
+    ...(params.identity ? { identity: params.identity } : {}),
+    ...(params.subagents ? { subagents: params.subagents } : {}),
+    ...(params.tools ? { tools: params.tools } : {}),
   };
   const nextList = [...list];
   if (index >= 0) {

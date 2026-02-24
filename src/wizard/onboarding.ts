@@ -451,6 +451,13 @@ export async function runOnboardingWizard(
     nextConfig = await setupMemory(nextConfig, runtime, prompter);
   }
 
+  if (opts.skipAgents) {
+    await prompter.note("Skipping multi-agent setup.", "Multi-agent");
+  } else {
+    const { setupAgents } = await import("../commands/onboard-agents.js");
+    nextConfig = await setupAgents(nextConfig, runtime, prompter);
+  }
+
   // Setup hooks (session memory on /new)
   const { setupInternalHooks } = await import("../commands/onboard-hooks.js");
   nextConfig = await setupInternalHooks(nextConfig, runtime, prompter);
