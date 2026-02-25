@@ -10,6 +10,7 @@ import {
 import {
   filterBootstrapFilesForSession,
   loadWorkspaceBootstrapFiles,
+  type BootstrapFilterOptions,
   type WorkspaceBootstrapFile,
 } from "./workspace.js";
 
@@ -48,6 +49,7 @@ export async function resolveBootstrapFilesForRun(params: {
   sessionId?: string;
   agentId?: string;
   warn?: (message: string) => void;
+  filterOptions?: BootstrapFilterOptions;
 }): Promise<WorkspaceBootstrapFile[]> {
   const sessionKey = params.sessionKey ?? params.sessionId;
   const rawFiles = params.sessionKey
@@ -56,7 +58,12 @@ export async function resolveBootstrapFilesForRun(params: {
         sessionKey: params.sessionKey,
       })
     : await loadWorkspaceBootstrapFiles(params.workspaceDir);
-  const bootstrapFiles = filterBootstrapFilesForSession(rawFiles, sessionKey);
+  
+  const filterOptions: BootstrapFilterOptions = {
+    ...params.filterOptions,
+    sessionKey,
+  };
+  const bootstrapFiles = filterBootstrapFilesForSession(rawFiles, filterOptions);
 
   const updated = await applyBootstrapHookOverrides({
     files: bootstrapFiles,
@@ -76,11 +83,15 @@ export async function resolveBootstrapContextForRun(params: {
   sessionId?: string;
   agentId?: string;
   warn?: (message: string) => void;
+  filterOptions?: BootstrapFilterOptions;
 }): Promise<{
   bootstrapFiles: WorkspaceBootstrapFile[];
   contextFiles: EmbeddedContextFile[];
 }> {
-  const bootstrapFiles = await resolveBootstrapFilesForRun(params);
+  const bootstrapFiles = await resolveBootstrapFilesForRun({
+    ...params,
+    filterOptions: params.filterOptions,
+  });
   const contextFiles = buildBootstrapContextFiles(bootstrapFiles, {
     maxChars: resolveBootstrapMaxChars(params.config),
     totalMaxChars: resolveBootstrapTotalMaxChars(params.config),

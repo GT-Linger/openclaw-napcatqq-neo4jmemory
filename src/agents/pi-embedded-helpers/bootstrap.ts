@@ -3,6 +3,13 @@ import path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { OpenClawConfig } from "../../config/config.js";
 import { truncateUtf16Safe } from "../../utils.js";
+import {
+  DEFAULT_AGENTS_FILENAME,
+  DEFAULT_SOUL_FILENAME,
+  MEMORY_FILE_MEMORY_FILENAME,
+  MEMORY_GRAPH_MEMORY_FILENAME,
+  SUBAGENTS_INJECT_FILENAME,
+} from "../workspace.js";
 import type { WorkspaceBootstrapFile } from "../workspace.js";
 import type { EmbeddedContextFile } from "./types.js";
 
@@ -87,6 +94,18 @@ export const DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS = 150_000;
 const MIN_BOOTSTRAP_FILE_BUDGET_CHARS = 64;
 const BOOTSTRAP_HEAD_RATIO = 0.7;
 const BOOTSTRAP_TAIL_RATIO = 0.2;
+
+const PRIORITY_BOOTSTRAP_FILES = new Set([
+  DEFAULT_AGENTS_FILENAME,
+  DEFAULT_SOUL_FILENAME,
+  MEMORY_FILE_MEMORY_FILENAME,
+  MEMORY_GRAPH_MEMORY_FILENAME,
+  SUBAGENTS_INJECT_FILENAME,
+]);
+
+export function isPriorityBootstrapFile(filename: string): boolean {
+  return PRIORITY_BOOTSTRAP_FILES.has(filename);
+}
 
 type TrimBootstrapResult = {
   content: string;
@@ -195,7 +214,61 @@ export function buildBootstrapContextFiles(
   );
   let remainingTotalChars = totalMaxChars;
   const result: EmbeddedContextFile[] = [];
+
+  const priorityFiles: WorkspaceBootstrapFile[] = [];
+  const secondaryFiles: WorkspaceBootstrapFile[] = [];
+
   for (const file of files) {
+    if (isPriorityBootstrapFile(file.name)) {
+      priorityFiles.push(file);
+    } else {
+      secondaryFiles.push(file);
+    }
+  }
+
+  for (const file of priorityFiles) {
+    if (remainingTotalChars <= 0) {
+      break;
+    }
+    const pathValue = typeof file.path === "string" ? file.path.trim() : "";
+    if (!pathValue) {
+      opts?.warn?.(
+        `skipping bootstrap file "${file.name}" — missing or invalid "path" field (hook may have used "filePath" instead)`,
+      );
+      continue;
+    }
+    if (file.missing) {
+      const missingText = `[MISSING] Expected at: ${pathValue}`;
+      const cappedMissingText = clampToBudget(missingText, remainingTotalChars);
+      if (!cappedMissingText) {
+        break;
+      }
+      remainingTotalChars = Math.max(0, remainingTotalChars - cappedMissingText.length);
+      result.push({
+        path: pathValue,
+        content: cappedMissingText,
+      });
+      continue;
+    }
+    const priorityMaxChars = Math.max(1, remainingTotalChars);
+    const trimmed = trimBootstrapContent(file.content ?? "", file.name, priorityMaxChars);
+    const contentWithinBudget = clampToBudget(trimmed.content, remainingTotalChars);
+    if (!contentWithinBudget) {
+      continue;
+    }
+    if (trimmed.truncated || contentWithinBudget.length < trimmed.content.length) {
+      opts?.warn?.(
+        `workspace bootstrap file ${file.name} is ${trimmed.originalLength} chars (limit ${priorityMaxChars}); truncating in injected context`,
+      );
+    }
+    remainingTotalChars = Math.max(0, remainingTotalChars - contentWithinBudget.length);
+    result.push({
+      path: pathValue,
+      content: contentWithinBudget,
+    });
+  }
+
+  for (const file of secondaryFiles) {
     if (remainingTotalChars <= 0) {
       break;
     }

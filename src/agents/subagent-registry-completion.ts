@@ -1,5 +1,8 @@
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import type { SubagentRunOutcome } from "./subagent-announce.js";
+import { getSubagentById } from "./subagent-manager.js";
+import { stopSubagentModelService } from "./model-service-integration.js";
+import { releaseModelSlot, removeFromWaitingQueue, getModelKey, subtractMemoryUsage } from "./subagent-concurrency.js";
 import {
   SUBAGENT_ENDED_OUTCOME_ERROR,
   SUBAGENT_ENDED_OUTCOME_OK,
@@ -85,6 +88,31 @@ export async function emitSubagentEndedHookOnce(params: {
         },
       );
     }
+
+    const agentIdMatch = params.entry.childSessionKey.match(/^agent:([^:]+):/);
+    if (agentIdMatch) {
+      const agentId = agentIdMatch[1];
+      const subagentConfig = getSubagentById(agentId);
+      if (subagentConfig) {
+        const endpoint = subagentConfig.model.endpoint;
+        const behavior = subagentConfig.behavior ?? {};
+        const endpointWithModel = {
+          provider: endpoint.provider,
+          baseUrl: endpoint.baseUrl,
+          model: endpoint.model,
+        };
+        const gpuMemoryUtilization = behavior.gpuMemoryUtilization ?? 0.9;
+
+        releaseModelSlot(agentId, endpointWithModel, params.entry.requesterSessionKey);
+        removeFromWaitingQueue(params.entry.runId, params.entry.requesterSessionKey);
+        subtractMemoryUsage(agentId, endpointWithModel, gpuMemoryUtilization);
+
+        stopSubagentModelService(params.entry.runId, subagentConfig).catch((err) => {
+          console.error(`[SubagentCompletion] Failed to stop model service for subagent ${agentId}:`, err);
+        });
+      }
+    }
+
     params.entry.endedHookEmittedAt = Date.now();
     params.persist();
     return true;

@@ -42,6 +42,7 @@ import {
 } from "./onboard-helpers.js";
 import { promptRemoteGatewayConfig } from "./onboard-remote.js";
 import { setupSkills } from "./onboard-skills.js";
+import { createSubagentWizard, listSubagentsWizard } from "./configure.subagent.js";
 
 type ConfigureSectionChoice = WizardSection | "__continue";
 
@@ -407,6 +408,18 @@ export async function runConfigureWizard(
         nextConfig = await setupSkills(nextConfig, wsDir, runtime, prompter);
       }
 
+      if (selected.includes("subagents")) {
+        console.log("\n=== 子智能体配置 ===\n");
+        const hasExisting = await listSubagentsWizard();
+        const createNew = await confirm({
+          message: "是否创建新的子智能体？",
+          initialValue: true,
+        });
+        if (createNew) {
+          await createSubagentWizard();
+        }
+      }
+
       await persistConfig();
 
       if (selected.includes("daemon")) {
@@ -464,6 +477,18 @@ export async function runConfigureWizard(
           const wsDir = resolveUserPath(workspaceDir);
           nextConfig = await setupSkills(nextConfig, wsDir, runtime, prompter);
           await persistConfig();
+        }
+
+        if (choice === "subagents") {
+          console.log("\n=== 子智能体配置 ===\n");
+          await listSubagentsWizard();
+          const createNew = await confirm({
+            message: "是否创建新的子智能体？",
+            initialValue: true,
+          });
+          if (createNew) {
+            await createSubagentWizard();
+          }
         }
 
         if (choice === "daemon") {

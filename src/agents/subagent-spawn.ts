@@ -8,7 +8,10 @@ import { normalizeAgentId, parseAgentSessionKey } from "../routing/session-key.j
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
 import { resolveAgentConfig } from "./agent-scope.js";
 import { AGENT_LANE_SUBAGENT } from "./lanes.js";
+import { getSubagentById } from "./subagent-manager.js";
 import { resolveSubagentSpawnModelSelection } from "./model-selection.js";
+import { startSubagentModelService } from "./model-service-integration.js";
+import { buildSubagentPromptWithConfig } from "./subagent-prompt-builder.js";
 import { buildSubagentSystemPrompt } from "./subagent-announce.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
 import { countActiveRunsForSession, registerSubagentRun } from "./subagent-registry.js";
@@ -18,6 +21,15 @@ import {
   resolveInternalSessionKey,
   resolveMainSessionAlias,
 } from "./tools/sessions-helpers.js";
+import {
+  hasModelConflict,
+  registerToWaitingQueue,
+  activateModelSlot,
+  removeFromWaitingQueue,
+  getModelKey,
+  addMemoryUsage,
+  subtractMemoryUsage,
+} from "./subagent-concurrency.js";
 
 export const SUBAGENT_SPAWN_MODES = ["run", "session"] as const;
 export type SpawnSubagentMode = (typeof SUBAGENT_SPAWN_MODES)[number];
@@ -379,15 +391,29 @@ export async function spawnSubagentDirect(
     }
     threadBindingReady = true;
   }
-  const childSystemPrompt = buildSubagentSystemPrompt({
-    requesterSessionKey,
-    requesterOrigin,
-    childSessionKey,
-    label: label || undefined,
-    task,
-    childDepth,
-    maxSpawnDepth,
-  });
+
+  let childSystemPrompt: string;
+  if (targetAgentId !== requesterAgentId && targetAgentId) {
+    childSystemPrompt = buildSubagentPromptWithConfig(targetAgentId, {
+      requesterSessionKey,
+      requesterOrigin,
+      childSessionKey,
+      label: label || undefined,
+      task,
+      childDepth,
+      maxSpawnDepth,
+    });
+  } else {
+    childSystemPrompt = buildSubagentSystemPrompt({
+      requesterSessionKey,
+      requesterOrigin,
+      childSessionKey,
+      label: label || undefined,
+      task,
+      childDepth,
+      maxSpawnDepth,
+    });
+  }
   const childTaskMessage = [
     `[Subagent Context] You are running as a subagent (depth ${childDepth}/${maxSpawnDepth}). Results auto-announce to your requester; do not busy-poll for status.`,
     spawnMode === "session"
@@ -520,6 +546,62 @@ export async function spawnSubagentDirect(
       );
     } catch {
       // Spawn should still return accepted if spawn lifecycle hooks fail.
+    }
+  }
+
+  if (targetAgentId !== requesterAgentId) {
+    const subagentConfig = getSubagentById(targetAgentId);
+    if (subagentConfig) {
+      const endpoint = subagentConfig.model.endpoint;
+      const behavior = subagentConfig.behavior ?? {};
+      const endpointWithModel = {
+        provider: endpoint.provider,
+        baseUrl: endpoint.baseUrl,
+        model: endpoint.model,
+      };
+
+      const gpuMemoryUtilization = behavior.gpuMemoryUtilization ?? 0.9;
+      const conflictCheck = hasModelConflict(targetAgentId, endpointWithModel, requesterInternalKey, gpuMemoryUtilization);
+
+      if (conflictCheck.hasConflict) {
+        console.log(`[SubagentSpawn] ${conflictCheck.reason || "Conflict detected"} for ${targetAgentId}, registering to waiting queue`);
+
+        registerToWaitingQueue(
+          targetAgentId,
+          childRunId,
+          task,
+          label || undefined,
+          endpointWithModel,
+          requesterInternalKey,
+        ).then((resolvedRunId) => {
+          console.log(`[SubagentSpawn] Subagent ${targetAgentId} (runId: ${resolvedRunId}) got slot, starting model service`);
+          activateModelSlot(targetAgentId, resolvedRunId, endpointWithModel, requesterInternalKey);
+          addMemoryUsage(targetAgentId, endpointWithModel, gpuMemoryUtilization);
+          const waitedSubagentConfig = getSubagentById(targetAgentId);
+          if (waitedSubagentConfig) {
+            startSubagentModelService(resolvedRunId, waitedSubagentConfig).catch((err) => {
+              console.error(`[SubagentSpawn] Failed to start model service for waiting subagent ${targetAgentId}:`, err);
+            });
+          }
+        }).catch((err) => {
+          console.error(`[SubagentSpawn] Error waiting for model slot: ${err}`);
+        });
+
+        return {
+          status: "accepted",
+          childSessionKey,
+          runId: childRunId,
+          mode: spawnMode,
+          note: spawnMode === "session" ? SUBAGENT_SPAWN_SESSION_ACCEPTED_NOTE : SUBAGENT_SPAWN_ACCEPTED_NOTE,
+          modelApplied: resolvedModel ? modelApplied : undefined,
+        };
+      } else {
+        activateModelSlot(targetAgentId, childRunId, endpointWithModel, requesterInternalKey);
+        addMemoryUsage(targetAgentId, endpointWithModel, gpuMemoryUtilization);
+        startSubagentModelService(childRunId, subagentConfig).catch((err) => {
+          console.error(`[SubagentSpawn] Failed to start model service for subagent ${targetAgentId}:`, err);
+        });
+      }
     }
   }
 

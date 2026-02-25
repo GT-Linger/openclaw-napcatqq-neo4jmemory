@@ -222,6 +222,13 @@
     "hintConfigured": "已配置",
     "hintNeedsConfig": "需要配置"
   },
+  "subagent": {
+    "injectTitle": "可用子智能体",
+    "injectIntro": "以下是已配置的子智能体及其专长：",
+    "injectDescription": "**描述**",
+    "injectModel": "**模型**",
+    "injectUsageNote": "**使用说明**：当需要使用子智能体时，先调用 `available_subagents` 工具查看可用子智能体列表，然后根据任务需求选择合适的子智能体执行任务。"
+  },
   "common": {
     "required": "必填",
     "yes": "是",

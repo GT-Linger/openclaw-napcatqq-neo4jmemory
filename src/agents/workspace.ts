@@ -161,6 +161,22 @@ export const DEFAULT_HEARTBEAT_FILENAME = "HEARTBEAT.md";
 export const DEFAULT_BOOTSTRAP_FILENAME = "BOOTSTRAP.md";
 export const DEFAULT_MEMORY_FILENAME = "MEMORY.md";
 export const DEFAULT_MEMORY_ALT_FILENAME = "memory.md";
+
+export const MEMORY_DIR_NAME = "memory";
+export const MEMORY_FILE_MEMORY_FILENAME = "file-memory.md";
+export const MEMORY_GRAPH_MEMORY_FILENAME = "graph-memory.md";
+
+export const PLATFORM_DIR_NAME = "platform";
+export const PLATFORM_QQ_FILENAME = "qq.md";
+export const PLATFORM_DISCORD_FILENAME = "discord.md";
+export const PLATFORM_SLACK_FILENAME = "slack.md";
+export const PLATFORM_TELEGRAM_FILENAME = "telegram.md";
+
+export const FEATURES_DIR_NAME = "features";
+export const FEATURES_SUBAGENT_FILENAME = "subagent.md";
+export const FEATURES_TTS_FILENAME = "tts.md";
+
+export const SUBAGENTS_INJECT_FILENAME = "subagents-inject.md";
 const WORKSPACE_STATE_DIRNAME = ".openclaw";
 const WORKSPACE_STATE_FILENAME = "workspace-state.json";
 const WORKSPACE_STATE_VERSION = 1;
@@ -248,7 +264,16 @@ export type WorkspaceBootstrapFileName =
   | typeof DEFAULT_HEARTBEAT_FILENAME
   | typeof DEFAULT_BOOTSTRAP_FILENAME
   | typeof DEFAULT_MEMORY_FILENAME
-  | typeof DEFAULT_MEMORY_ALT_FILENAME;
+  | typeof DEFAULT_MEMORY_ALT_FILENAME
+  | typeof MEMORY_FILE_MEMORY_FILENAME
+  | typeof MEMORY_GRAPH_MEMORY_FILENAME
+  | typeof PLATFORM_QQ_FILENAME
+  | typeof PLATFORM_DISCORD_FILENAME
+  | typeof PLATFORM_SLACK_FILENAME
+  | typeof PLATFORM_TELEGRAM_FILENAME
+  | typeof FEATURES_SUBAGENT_FILENAME
+  | typeof FEATURES_TTS_FILENAME
+  | typeof SUBAGENTS_INJECT_FILENAME;
 
 export type WorkspaceBootstrapFile = {
   name: WorkspaceBootstrapFileName;
@@ -274,6 +299,15 @@ const VALID_BOOTSTRAP_NAMES: ReadonlySet<string> = new Set([
   DEFAULT_BOOTSTRAP_FILENAME,
   DEFAULT_MEMORY_FILENAME,
   DEFAULT_MEMORY_ALT_FILENAME,
+  MEMORY_FILE_MEMORY_FILENAME,
+  MEMORY_GRAPH_MEMORY_FILENAME,
+  PLATFORM_QQ_FILENAME,
+  PLATFORM_DISCORD_FILENAME,
+  PLATFORM_SLACK_FILENAME,
+  PLATFORM_TELEGRAM_FILENAME,
+  FEATURES_SUBAGENT_FILENAME,
+  FEATURES_TTS_FILENAME,
+  SUBAGENTS_INJECT_FILENAME,
 ]);
 
 async function writeFileIfMissing(filePath: string, content: string): Promise<boolean> {
@@ -599,13 +633,39 @@ async function resolveMemoryBootstrapEntries(
   return deduped;
 }
 
+function resolveModuleBootstrapEntries(
+  resolvedDir: string,
+  subDir: string,
+  filenames: string[],
+): Array<{ name: WorkspaceBootstrapFileName; filePath: string }> {
+  const entries: Array<{ name: WorkspaceBootstrapFileName; filePath: string }> = [];
+  const moduleDir = path.join(resolvedDir, subDir);
+
+  for (const filename of filenames) {
+    const filePath = path.join(moduleDir, filename);
+    entries.push({
+      name: filename as WorkspaceBootstrapFileName,
+      filePath,
+    });
+  }
+
+  return entries;
+}
+
 export async function loadWorkspaceBootstrapFiles(dir: string): Promise<WorkspaceBootstrapFile[]> {
   const resolvedDir = resolveUserPath(dir);
 
-  const entries: Array<{
+  const priorityEntries: Array<{
     name: WorkspaceBootstrapFileName;
     filePath: string;
-  }> = [
+  }> = [];
+
+  const secondaryEntries: Array<{
+    name: WorkspaceBootstrapFileName;
+    filePath: string;
+  }> = [];
+
+  priorityEntries.push(
     {
       name: DEFAULT_AGENTS_FILENAME,
       filePath: path.join(resolvedDir, DEFAULT_AGENTS_FILENAME),
@@ -614,6 +674,15 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
       name: DEFAULT_SOUL_FILENAME,
       filePath: path.join(resolvedDir, DEFAULT_SOUL_FILENAME),
     },
+  );
+
+  priorityEntries.push(...(await resolveMemoryBootstrapEntries(resolvedDir)));
+  priorityEntries.push(...resolveModuleBootstrapEntries(resolvedDir, MEMORY_DIR_NAME, [
+    MEMORY_FILE_MEMORY_FILENAME,
+    MEMORY_GRAPH_MEMORY_FILENAME,
+  ]));
+
+  secondaryEntries.push(
     {
       name: DEFAULT_TOOLS_FILENAME,
       filePath: path.join(resolvedDir, DEFAULT_TOOLS_FILENAME),
@@ -634,12 +703,27 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
       name: DEFAULT_BOOTSTRAP_FILENAME,
       filePath: path.join(resolvedDir, DEFAULT_BOOTSTRAP_FILENAME),
     },
-  ];
+  );
 
-  entries.push(...(await resolveMemoryBootstrapEntries(resolvedDir)));
+  secondaryEntries.push(...resolveModuleBootstrapEntries(resolvedDir, PLATFORM_DIR_NAME, [
+    PLATFORM_QQ_FILENAME,
+    PLATFORM_DISCORD_FILENAME,
+    PLATFORM_SLACK_FILENAME,
+    PLATFORM_TELEGRAM_FILENAME,
+  ]));
+  secondaryEntries.push(...resolveModuleBootstrapEntries(resolvedDir, FEATURES_DIR_NAME, [
+    FEATURES_SUBAGENT_FILENAME,
+    FEATURES_TTS_FILENAME,
+  ]));
+
+  secondaryEntries.push({
+    name: SUBAGENTS_INJECT_FILENAME,
+    filePath: path.join(resolvedDir, SUBAGENTS_INJECT_FILENAME),
+  });
 
   const result: WorkspaceBootstrapFile[] = [];
-  for (const entry of entries) {
+
+  for (const entry of priorityEntries) {
     try {
       const content = await readFileWithCache(entry.filePath);
       result.push({
@@ -652,6 +736,21 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
       result.push({ name: entry.name, path: entry.filePath, missing: true });
     }
   }
+
+  for (const entry of secondaryEntries) {
+    try {
+      const content = await readFileWithCache(entry.filePath);
+      result.push({
+        name: entry.name,
+        path: entry.filePath,
+        content,
+        missing: false,
+      });
+    } catch {
+      result.push({ name: entry.name, path: entry.filePath, missing: true });
+    }
+  }
+
   return result;
 }
 
@@ -663,14 +762,98 @@ const MINIMAL_BOOTSTRAP_ALLOWLIST = new Set([
   DEFAULT_USER_FILENAME,
 ]);
 
+export interface BootstrapFilterOptions {
+  memoryType?: "file" | "graph" | "none";
+  channel?: "qq" | "discord" | "slack" | "telegram" | "telegram-group";
+  hasSubagents?: boolean;
+  hasTts?: boolean;
+  sessionKey?: string;
+}
+
 export function filterBootstrapFilesForSession(
   files: WorkspaceBootstrapFile[],
   sessionKey?: string,
+): WorkspaceBootstrapFile[];
+export function filterBootstrapFilesForSession(
+  files: WorkspaceBootstrapFile[],
+  options?: BootstrapFilterOptions,
+): WorkspaceBootstrapFile[];
+export function filterBootstrapFilesForSession(
+  files: WorkspaceBootstrapFile[],
+  options?: string | BootstrapFilterOptions,
 ): WorkspaceBootstrapFile[] {
-  if (!sessionKey || (!isSubagentSessionKey(sessionKey) && !isCronSessionKey(sessionKey))) {
+  const sessionKey = typeof options === "string" ? options : options?.sessionKey;
+  const filterOpts = typeof options === "object" ? options : undefined;
+
+  if (!sessionKey && !filterOpts) {
     return files;
   }
-  return files.filter((file) => MINIMAL_BOOTSTRAP_ALLOWLIST.has(file.name));
+
+  if (sessionKey && (!isSubagentSessionKey(sessionKey) && !isCronSessionKey(sessionKey)) && !filterOpts) {
+    return files;
+  }
+
+  let filtered = files;
+
+  if (sessionKey && (isSubagentSessionKey(sessionKey) || isCronSessionKey(sessionKey))) {
+    filtered = filtered.filter((file) => MINIMAL_BOOTSTRAP_ALLOWLIST.has(file.name));
+  }
+
+  if (filterOpts) {
+    filtered = applyModuleFilters(filtered, filterOpts);
+  }
+
+  return filtered;
+}
+
+function applyModuleFilters(
+  files: WorkspaceBootstrapFile[],
+  opts: BootstrapFilterOptions,
+): WorkspaceBootstrapFile[] {
+  const result: WorkspaceBootstrapFile[] = [];
+
+  for (const file of files) {
+    let include = true;
+
+    if (file.name === MEMORY_FILE_MEMORY_FILENAME || file.name === MEMORY_GRAPH_MEMORY_FILENAME) {
+      if (opts.memoryType === "file") {
+        include = file.name === MEMORY_FILE_MEMORY_FILENAME;
+      } else if (opts.memoryType === "graph") {
+        include = file.name === MEMORY_GRAPH_MEMORY_FILENAME;
+      } else {
+        include = false;
+      }
+    }
+
+    if ([PLATFORM_QQ_FILENAME, PLATFORM_DISCORD_FILENAME, PLATFORM_SLACK_FILENAME, PLATFORM_TELEGRAM_FILENAME].includes(file.name)) {
+      if (!opts.channel) {
+        include = false;
+      } else {
+        const channelToFile: Record<string, string> = {
+          qq: PLATFORM_QQ_FILENAME,
+          discord: PLATFORM_DISCORD_FILENAME,
+          slack: PLATFORM_SLACK_FILENAME,
+          telegram: PLATFORM_TELEGRAM_FILENAME,
+          "telegram-group": PLATFORM_TELEGRAM_FILENAME,
+        };
+        include = channelToFile[opts.channel] === file.name;
+      }
+    }
+
+    if (file.name === FEATURES_SUBAGENT_FILENAME) {
+      include = opts.hasSubagents === true;
+    }
+
+    if (file.name === FEATURES_TTS_FILENAME) {
+      include = opts.hasTts === true;
+    }
+
+    if (include) {
+      result.push(file);
+    }
+  }
+
+  return result;
 }
 
 export async function loadExtraBootstrapFiles(

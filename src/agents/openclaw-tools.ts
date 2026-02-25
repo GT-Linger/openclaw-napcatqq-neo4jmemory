@@ -5,6 +5,7 @@ import { resolveSessionAgentId } from "./agent-scope.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
 import type { ToolFsPolicy } from "./tool-fs-policy.js";
 import { createAgentsListTool } from "./tools/agents-list-tool.js";
+import { createAvailableSubagentsTool } from "./tools/available-subagents-tool.js";
 import { createBrowserTool } from "./tools/browser-tool.js";
 import { createCanvasTool } from "./tools/canvas-tool.js";
 import type { AnyAgentTool } from "./tools/common.js";
@@ -162,6 +163,7 @@ export function createOpenClawTools(options?: {
     createSubagentsTool({
       agentSessionKey: options?.agentSessionKey,
     }),
+    createAvailableSubagentsTool(),
     createSessionStatusTool({
       agentSessionKey: options?.agentSessionKey,
       config: options?.config,

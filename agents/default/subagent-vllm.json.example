@@ -1,0 +1,19 @@
+{
+  "coding-agent": {
+    "vllmModelId": "deepseek-coder",
+    "autoLoad": true,
+    "autoUnload": true,
+    "unloadDelayMs": 5000
+  },
+  "math-agent": {
+    "vllmModelId": "deepseek-math",
+    "autoLoad": true,
+    "autoUnload": true,
+    "unloadDelayMs": 3000
+  },
+  "long-running-agent": {
+    "vllmModelId": "qwen-coder",
+    "autoLoad": true,
+    "autoUnload": false
+  }
+}

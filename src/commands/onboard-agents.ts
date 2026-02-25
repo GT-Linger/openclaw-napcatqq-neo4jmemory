@@ -1,302 +1,333 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import {
-  listAgentEntries,
-  resolveAgentWorkspaceDir,
-} from "../agents/agent-scope.js";
-import type { AgentConfig } from "../config/types.agents.js";
-import type { IdentityConfig } from "../config/types.base.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type { RuntimeEnv } from "../runtime.js";
-import { resolveUserPath } from "../utils.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
-import { normalizeAgentId, DEFAULT_AGENT_ID } from "../routing/session-key.js";
-import { applyAgentConfig, findAgentEntryIndex } from "./agents.config.js";
+import {
+  getTemplateNames,
+  getTemplateById,
+  createSubagentFromTemplate,
+} from "../agents/subagent-templates.js";
+import { listSubagents, addSubagent } from "../agents/subagent-manager.js";
+import { enhanceSubagentConfig, canEnhancePersonality } from "../agents/subagent-personality-enhancer.js";
+import { createSubagentWorkspaceFromConfig } from "../agents/subagent-workspace.js";
+import type { SubagentConfig, ModelEndpoint } from "../agents/subagent-config.js";
+import type { VllmServerConfig } from "../agents/subagent-vllm-config.js";
+import {
+  loadVllmModelsConfig,
+  saveVllmModelsConfig,
+} from "../agents/model-service-integration.js";
 
-const PREDEFINED_AGENT_TEMPLATES: Array<{
-  id: string;
-  name: string;
-  description: string;
-  suggestedModel?: string;
-  identity?: IdentityConfig;
-  tools?: AgentConfig["tools"];
-}> = [
-  {
-    id: "search",
-    name: "Search Expert",
-    description: "Handle web search, information gathering and summarization tasks",
-    identity: { name: "Explorer", emoji: "🔍" },
-    tools: { profile: "minimal", allow: ["web_search", "web_fetch", "read"] },
-  },
-  {
-    id: "writing",
-    name: "Writing Expert",
-    description: "Handle creative writing, article drafting, script writing tasks",
-    identity: { name: "Ella", emoji: "✒️" },
-    tools: { profile: "minimal", allow: ["read", "write", "edit"] },
-  },
-  {
-    id: "coding",
-    name: "Coding Expert",
-    description: "Handle coding, debugging, refactoring and technical tasks",
-    identity: { name: "Coder", emoji: "💻" },
-    tools: { profile: "coding" },
-  },
-  {
-    id: "analysis",
-    name: "Analysis Expert",
-    description: "Handle data analysis, report generation, chart creation tasks",
-    identity: { name: "Analyst", emoji: "📊" },
-    tools: { profile: "coding" },
-  },
-];
-
-type SubagentConfig = AgentConfig["subagents"];
-
-function getAgentsList(cfg: OpenClawConfig): AgentConfig[] {
-  return listAgentEntries(cfg);
+export interface MainAgentEndpoint {
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
 }
 
-async function ensureWorkspaceDir(workspace: string, runtime: RuntimeEnv): Promise<void> {
+async function checkEndpointAvailable(baseUrl: string): Promise<boolean> {
   try {
-    await fs.mkdir(workspace, { recursive: true });
-  } catch (err) {
-    runtime.error?.(`Failed to create workspace: ${workspace}`);
-    throw err;
-  }
-}
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-async function createAgentSoulFile(workspace: string, identity?: IdentityConfig): Promise<void> {
-  const soulPath = path.join(workspace, "SOUL.md");
-  try {
-    await fs.access(soulPath);
-    return;
-  } catch {
-    // File doesn't exist, create it
-  }
-
-  const identityName = identity?.name || "a professional assistant";
-  const identityEmoji = identity?.emoji ? ` ${identity.emoji}` : "";
-
-  const content = `# SOUL.md
-
-## Who I Am
-
-I am ${identityName}${identityEmoji}.
-
-## My Expertise
-
-Please edit this file to define my professional capabilities and working style.
-
-## Working Principles
-
-1. Focus on assigned tasks
-2. Deliver high-quality output
-3. Stay professional and efficient
-`;
-
-  await fs.writeFile(soulPath, content, "utf-8");
-}
-
-async function promptForAgentConfig(params: {
-  prompter: WizardPrompter;
-  cfg: OpenClawConfig;
-  runtime: RuntimeEnv;
-  existingId?: string;
-}): Promise<AgentConfig | null> {
-  const { prompter, cfg, runtime, existingId } = params;
-
-  const isEditing = Boolean(existingId);
-
-  const name = await prompter.text({
-    message: isEditing ? "Agent name" : "New agent name",
-    initialValue: existingId ?? "",
-    placeholder: "e.g., search, writing, coding",
-    validate: (value) => {
-      const trimmed = value?.trim();
-      if (!trimmed) {
-        return "Name cannot be empty";
-      }
-      const normalized = normalizeAgentId(trimmed);
-      if (normalized === DEFAULT_AGENT_ID) {
-        return `"${DEFAULT_AGENT_ID}" is reserved, please choose another name`;
-      }
-      if (!isEditing && findAgentEntryIndex(getAgentsList(cfg), normalized) >= 0) {
-        return `Agent "${normalized}" already exists`;
-      }
-      return undefined;
-    },
-  });
-
-  const agentId = normalizeAgentId(name);
-  const displayName = name.trim();
-
-  const defaultWorkspace = resolveAgentWorkspaceDir(cfg, agentId);
-  const workspaceInput = await prompter.text({
-    message: "Workspace path",
-    initialValue: defaultWorkspace,
-    placeholder: `Default: ${defaultWorkspace}`,
-  });
-
-  const workspace = workspaceInput.trim() || defaultWorkspace;
-
-  const useTemplate = await prompter.confirm({
-    message: "Use a predefined template?",
-    initialValue: false,
-  });
-
-  let selectedTemplate: (typeof PREDEFINED_AGENT_TEMPLATES)[number] | undefined;
-  if (useTemplate) {
-    const templateOptions = PREDEFINED_AGENT_TEMPLATES.map((t) => ({
-      value: t.id,
-      label: `${t.name} (${t.id})`,
-      hint: t.description,
-    }));
-
-    const selectedId = await prompter.select({
-      message: "Select agent template",
-      options: templateOptions,
+    const response = await fetch(baseUrl.replace("/v1", "") + "/models", {
+      method: "GET",
+      signal: controller.signal,
     });
 
-    selectedTemplate = PREDEFINED_AGENT_TEMPLATES.find((t) => t.id === selectedId);
+    clearTimeout(timeoutId);
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+export type MainAgentEndpointStatus = {
+  available: boolean;
+  endpoint: MainAgentEndpoint | undefined;
+  reason?: string;
+};
+
+export async function checkMainAgentEndpoint(cfg: OpenClawConfig): Promise<MainAgentEndpointStatus> {
+  const endpoint = getMainAgentEndpointFromConfig(cfg);
+  if (!endpoint) {
+    return {
+      available: false,
+      endpoint: undefined,
+      reason: "未配置主智能体模型",
+    };
   }
 
-  const configureIdentity = await prompter.confirm({
-    message: "Configure agent identity/personality?",
+  const isAvailable = await checkEndpointAvailable(endpoint.baseUrl);
+  if (!isAvailable) {
+    return {
+      available: false,
+      endpoint,
+      reason: "主智能体模型服务未运行",
+    };
+  }
+
+  return {
+    available: true,
+    endpoint,
+  };
+}
+
+function getMainAgentEndpointFromConfig(cfg: OpenClawConfig): MainAgentEndpoint | undefined {
+  const modelConfig = cfg.agents?.defaults?.model;
+  if (!modelConfig) {
+    return undefined;
+  }
+
+  let primaryModel = "";
+  if (typeof modelConfig === "string") {
+    primaryModel = modelConfig;
+  } else if (modelConfig.primary) {
+    primaryModel = modelConfig.primary;
+  }
+
+  if (!primaryModel) {
+    return undefined;
+  }
+
+  const [provider, model] = primaryModel.includes("/")
+    ? primaryModel.split("/")
+    : [undefined, primaryModel];
+
+  let baseUrl = "https://api.openai.com/v1";
+  if (provider === "anthropic") {
+    baseUrl = "https://api.anthropic.com/v1";
+  } else if (provider === "ollama") {
+    baseUrl = "http://localhost:11434/v1";
+  } else if (provider === "vllm") {
+    baseUrl = "http://localhost:8000/v1";
+  } else if (provider === "sglang") {
+    baseUrl = "http://localhost:8000/v1";
+  }
+
+  return {
+    baseUrl,
+    model: model || primaryModel,
+  };
+}
+
+async function promptModelProvider(prompter: WizardPrompter): Promise<string> {
+  const choice = await prompter.select({
+    message: "选择模型供应商",
+    options: [
+      { value: "vllm", label: "vLLM", hint: "高性能 LLM 推理服务" },
+      { value: "ollama", label: "Ollama", hint: "本地 LLM 推理框架" },
+      { value: "sglang", label: "SGLang", hint: "快速 LLM 推理引擎" },
+      { value: "openai", label: "OpenAI API", hint: "OpenAI GPT 系列模型" },
+      { value: "anthropic", label: "Anthropic API", hint: "Claude 系列模型" },
+      { value: "custom", label: "自定义 API", hint: "兼容 OpenAI 的自定义 API" },
+    ],
+  });
+  return choice as string;
+}
+
+async function promptServerType(prompter: WizardPrompter): Promise<"local" | "remote"> {
+  const choice = await prompter.select({
+    message: "服务器类型",
+    options: [
+      { value: "local", label: "本地服务器", hint: "在本机运行 vLLM" },
+      { value: "remote", label: "远程服务器 (SSH)", hint: "通过 SSH 在远程服务器运行 vLLM" },
+    ],
+  });
+  return choice as "local" | "remote";
+}
+
+async function promptRemoteServerConfig(prompter: WizardPrompter): Promise<VllmServerConfig> {
+  const remoteHost = String(await prompter.text({
+    message: "远程服务器地址 (IP 或域名)",
+    placeholder: "例如: 192.168.1.100",
+  }));
+
+  const remotePortStr = String(await prompter.text({
+    message: "vLLM 服务端口",
+    initialValue: "8000",
+  }));
+  const remotePort = parseInt(remotePortStr, 10) || 8000;
+
+  const useSsh = await prompter.confirm({
+    message: "是否通过 SSH 启动/停止远程 vLLM？",
     initialValue: true,
   });
 
-  let identity: IdentityConfig | undefined = selectedTemplate?.identity;
-  if (configureIdentity) {
-    const identityName = await prompter.text({
-      message: "Identity name",
-      initialValue: identity?.name ?? "",
-      placeholder: "e.g., Ella, Explorer",
-    });
-
-    const identityEmoji = await prompter.text({
-      message: "Identity emoji",
-      initialValue: identity?.emoji ?? "",
-      placeholder: "e.g., ✒️, 🔍, 💻",
-    });
-
-    if (identityName.trim() || identityEmoji.trim()) {
-      identity = {
-        name: identityName.trim() || undefined,
-        emoji: identityEmoji.trim() || undefined,
-      };
-    }
+  if (!useSsh) {
+    return {
+      type: "remote",
+      host: remoteHost.trim(),
+      port: remotePort,
+    };
   }
 
-  const configureSubagents = await prompter.confirm({
-    message: "Configure sub-agent permissions?",
-    initialValue: false,
+  const sshHost = String(await prompter.text({
+    message: "SSH 服务器地址 (留空则使用远程服务器地址)",
+    initialValue: remoteHost.trim(),
+  }));
+
+  const sshPortStr = String(await prompter.text({
+    message: "SSH 端口",
+    initialValue: "22",
+  }));
+  const sshPort = parseInt(sshPortStr, 10) || 22;
+
+  const sshUsername = String(await prompter.text({
+    message: "SSH 用户名",
+    initialValue: "root",
+  }));
+
+  const authMethod = await prompter.select({
+    message: "SSH 认证方式",
+    options: [
+      { value: "key", label: "私钥文件", hint: "使用 SSH 私钥认证（推荐）" },
+      { value: "password", label: "密码", hint: "使用密码认证（安全性较低）" },
+    ],
   });
 
-  let subagents: SubagentConfig | undefined;
-  if (configureSubagents) {
-    const existingAgents = getAgentsList(cfg)
-      .filter((a) => normalizeAgentId(a.id) !== agentId)
-      .map((a) => a.id);
+  let privateKeyPath: string | undefined;
+  let password: string | undefined;
 
-    const allowAny = await prompter.confirm({
-      message: "Allow creating any type of sub-agent?",
+  if (authMethod === "key") {
+    const homeDir = process.env.HOME || "";
+    privateKeyPath = String(await prompter.text({
+      message: "SSH 私钥路径",
+      initialValue: `${homeDir}/.ssh/id_rsa`,
+    }));
+  } else {
+    password = String(await prompter.text({
+      message: "SSH 密码",
+    }));
+  }
+
+  const vllmPath = String(await prompter.text({
+    message: "远程服务器上 vLLM 安装路径（可选）",
+    placeholder: "例如: /opt/vllm",
+  }));
+
+  return {
+    type: "remote",
+    host: remoteHost.trim(),
+    port: remotePort,
+    ssh: {
+      enabled: true,
+      host: sshHost.trim() || remoteHost.trim(),
+      port: sshPort,
+      username: sshUsername.trim(),
+      privateKeyPath: privateKeyPath?.trim(),
+      password: password?.trim(),
+      vllmPath: vllmPath.trim() || undefined,
+    },
+  };
+}
+
+async function promptBaseUrl(prompter: WizardPrompter, provider: string): Promise<string> {
+  const defaultUrls: Record<string, string> = {
+    vllm: "http://localhost:8000/v1",
+    sglang: "http://localhost:8000/v1",
+    ollama: "http://localhost:11434",
+    openai: "https://api.openai.com/v1",
+    anthropic: "https://api.anthropic.com/v1",
+    custom: "http://localhost:8000/v1",
+  };
+
+  const url = await prompter.text({
+    message: "API 基础 URL",
+    initialValue: defaultUrls[provider] || "http://localhost:8000/v1",
+  });
+  return String(url || defaultUrls[provider]);
+}
+
+async function promptModelName(prompter: WizardPrompter, provider: string): Promise<string> {
+  const defaultModels: Record<string, string> = {
+    vllm: "qwen2.5-7b-instruct",
+    sglang: "qwen2.5-7b-instruct",
+    ollama: "llama3.1",
+    openai: "gpt-4o-mini",
+    anthropic: "claude-3-5-haiku-20241022",
+    custom: "gpt-4o-mini",
+  };
+
+  const model = await prompter.text({
+    message: "模型名称",
+    initialValue: defaultModels[provider],
+  });
+  return String(model || defaultModels[provider]);
+}
+
+async function promptSubagentName(prompter: WizardPrompter): Promise<string> {
+  const name = await prompter.text({
+    message: "子智能体名称",
+    placeholder: "例如：代码助手",
+  });
+  return String(name).trim();
+}
+
+async function promptSubagentLabel(prompter: WizardPrompter): Promise<string> {
+  const label = await prompter.text({
+    message: "子智能体标识符 (label)",
+    placeholder: "例如：coding-agent",
+  });
+  return String(label).trim().toLowerCase().replace(/\s+/g, "-");
+}
+
+async function promptSubagentDescription(prompter: WizardPrompter): Promise<string> {
+  const description = await prompter.text({
+    message: "子智能体工作内容描述",
+    placeholder: "例如：帮我写代码、调试bug",
+  });
+  return String(description).trim();
+}
+
+async function promptSubagentCount(prompter: WizardPrompter): Promise<number> {
+  const countStr = await prompter.text({
+    message: "创建数量",
+    initialValue: "1",
+  });
+  const count = parseInt(String(countStr).trim(), 10);
+  return isNaN(count) || count < 1 ? 1 : count > 10 ? 10 : count;
+}
+
+async function handleAIEnhancement(
+  prompter: WizardPrompter,
+  cfg: OpenClawConfig,
+  config: SubagentConfig,
+): Promise<SubagentConfig> {
+  const endpointStatus = await checkMainAgentEndpoint(cfg);
+
+  if (!endpointStatus.available) {
+    const skipEnhance = await prompter.confirm({
+      message: `AI 增强跳过：${endpointStatus.reason}。是否跳过人格增强？`,
       initialValue: true,
     });
 
-    if (allowAny) {
-      subagents = { allowAgents: ["*"] };
-    } else if (existingAgents.length > 0) {
-      const selectedAgents = await prompter.select({
-        message: "Select allowed sub-agent types",
-        options: [
-          { value: "*", label: "All agents", hint: "Allow creating any type" },
-          ...existingAgents.map((id) => ({
-            value: id,
-            label: id,
-            hint: `Allow creating ${id} type sub-agents`,
-          })),
-        ],
-      });
-
-      subagents = { allowAgents: [selectedAgents] };
+    if (skipEnhance) {
+      await prompter.note(
+        "已跳过 AI 增强。可在主智能体模型服务启动后，通过 'openclaw subagent enhance <id>' 手动增强。",
+        "跳过"
+      );
+      return config;
+    } else {
+      await prompter.note("请先启动主智能体模型服务，或选择其他模型供应商。", "提示");
+      return config;
     }
   }
 
-  const agentConfig: AgentConfig = {
-    id: agentId,
-    name: displayName,
-    workspace,
-    identity,
-    subagents,
-    tools: selectedTemplate?.tools,
-  };
-
-  await ensureWorkspaceDir(resolveUserPath(workspace), runtime);
-  await createAgentSoulFile(resolveUserPath(workspace), identity);
-
-  return agentConfig;
-}
-
-async function configureSubagentDefaults(params: {
-  cfg: OpenClawConfig;
-  prompter: WizardPrompter;
-}): Promise<OpenClawConfig> {
-  const { cfg, prompter } = params;
-
-  await prompter.note(
-    [
-      "Sub-agent Global Configuration",
-      "",
-      "These settings apply to all sub-agents' default behavior.",
-      "",
-      "Current settings:",
-      `- Max nesting depth: ${cfg.agents?.defaults?.subagents?.maxSpawnDepth ?? 1}`,
-      `- Max children per agent: ${cfg.agents?.defaults?.subagents?.maxChildrenPerAgent ?? 5}`,
-      `- Max concurrent: ${cfg.agents?.defaults?.subagents?.maxConcurrent ?? 8}`,
-    ].join("\n"),
-    "Sub-agent Configuration"
-  );
-
-  const configureDefaults = await prompter.confirm({
-    message: "Modify sub-agent global configuration?",
-    initialValue: false,
+  const shouldEnhance = await prompter.confirm({
+    message: "使用 AI 增强人格描述？（需要主智能体模型）",
+    initialValue: true,
   });
 
-  if (!configureDefaults) {
-    return cfg;
+  if (shouldEnhance) {
+    await prompter.note("正在使用 AI 增强人格描述...", "请稍候");
+    config = await enhanceSubagentConfig(config, endpointStatus.endpoint!);
+    if (config.personality?.enhanced) {
+      await prompter.note(
+        `增强后的人格描述：\n${config.personality.enhanced.slice(0, 200)}...`,
+        "人格已增强"
+      );
+    }
   }
 
-  const maxSpawnDepth = await prompter.text({
-    message: "Max nesting depth (1-5)",
-    initialValue: String(cfg.agents?.defaults?.subagents?.maxSpawnDepth ?? 1),
-  });
-
-  const maxChildrenPerAgent = await prompter.text({
-    message: "Max children per agent (1-20)",
-    initialValue: String(cfg.agents?.defaults?.subagents?.maxChildrenPerAgent ?? 5),
-  });
-
-  const maxConcurrent = await prompter.text({
-    message: "Max concurrent sub-agents",
-    initialValue: String(cfg.agents?.defaults?.subagents?.maxConcurrent ?? 8),
-  });
-
-  return {
-    ...cfg,
-    agents: {
-      ...cfg.agents,
-      defaults: {
-        ...cfg.agents?.defaults,
-        subagents: {
-          ...cfg.agents?.defaults?.subagents,
-          maxSpawnDepth: Math.min(5, Math.max(1, parseInt(maxSpawnDepth, 10) || 1)),
-          maxChildrenPerAgent: Math.min(20, Math.max(1, parseInt(maxChildrenPerAgent, 10) || 5)),
-          maxConcurrent: Math.max(1, parseInt(maxConcurrent, 10) || 8),
-        },
-      },
-    },
-  };
+  return config;
 }
 
 export async function setupAgents(
@@ -304,162 +335,220 @@ export async function setupAgents(
   runtime: RuntimeEnv,
   prompter: WizardPrompter,
 ): Promise<OpenClawConfig> {
-  const agents = getAgentsList(cfg);
-  const hasMultipleAgents = agents.length > 1;
+  const subagents = listSubagents();
+  const hasSubagents = subagents.length > 0;
 
   const statusLines: string[] = [
-    `Current agent count: ${agents.length || 1}`,
+    `当前子智能体数量: ${subagents.length || 0}`,
     "",
-    "Agent list:",
+    "子智能体列表:",
   ];
 
-  if (agents.length > 0) {
-    for (const agent of agents) {
-      const isDefault = agent.default ? " (default)" : "";
-      const identityName = agent.identity?.name ?? agent.name ?? agent.id;
-      const identityEmoji = agent.identity?.emoji ? ` ${agent.identity.emoji}` : "";
-      statusLines.push(`  - ${identityName}${identityEmoji} [${agent.id}]${isDefault}`);
+  if (subagents.length > 0) {
+    for (const sa of subagents) {
+      const modelInfo = `${sa.model.endpoint.provider} - ${sa.model.endpoint.model}`;
+      statusLines.push(`  - ${sa.name} [${sa.id}]`);
+      statusLines.push(`    模型: ${modelInfo}`);
+      if (sa.personality?.enhanced) {
+        statusLines.push(`    人格: ✅ 已增强`);
+      }
     }
   } else {
-    statusLines.push(`  - Main agent (default)`);
+    statusLines.push("  - 暂无子智能体");
   }
 
   statusLines.push("");
-  statusLines.push("Multi-agent architecture allows different task types to be handled by specialized agents.");
-  statusLines.push("For example: search tasks by search experts, writing tasks by writing experts.");
+  statusLines.push("vLLM 子智能体系统允许不同任务由专业 AI 模型处理。");
+  statusLines.push("例如：编程任务由代码模型处理，数学任务由数学模型处理。");
+  statusLines.push("每个子智能体有独立的模型服务，按需启动和停止。");
+  statusLines.push("支持供应商：vLLM、Ollama、SGLang、OpenAI、Anthropic、自定义 API。");
 
-  await prompter.note(statusLines.join("\n"), "Multi-agent Configuration");
+  await prompter.note(statusLines.join("\n"), "vLLM 子智能体配置");
 
   const shouldConfigure = await prompter.confirm({
-    message: "Configure multi-agent setup?",
-    initialValue: !hasMultipleAgents,
+    message: "配置 vLLM 子智能体？",
+    initialValue: !hasSubagents,
   });
 
   if (!shouldConfigure) {
     return cfg;
   }
 
-  let nextConfig = cfg;
   let continueConfiguring = true;
 
   while (continueConfiguring) {
     const action = await prompter.select({
-      message: "Select action",
+      message: "选择操作",
       options: [
-        { value: "add", label: "Add agent", hint: "Create a new specialized agent" },
-        { value: "template", label: "Add from template", hint: "Use predefined agent templates" },
-        { value: "defaults", label: "Configure sub-agent defaults", hint: "Global sub-agent settings" },
-        { value: "done", label: "Done", hint: "Exit multi-agent configuration" },
+        { value: "create", label: "创建子智能体", hint: "从模板选择或手动填写" },
+        { value: "list", label: "查看列表", hint: "查看已创建的子智能体" },
+        { value: "done", label: "完成", hint: "退出配置" },
       ],
     });
 
-    switch (action) {
-      case "add": {
-        const agentConfig = await promptForAgentConfig({
-          prompter,
-          cfg: nextConfig,
-          runtime,
+    if (action === "list") {
+      const currentList = listSubagents();
+      if (currentList.length === 0) {
+        await prompter.note("暂无子智能体", "列表");
+      } else {
+        const listLines: string[] = [];
+        for (const sa of currentList) {
+          listLines.push(`📌 ${sa.name} (${sa.id})`);
+          listLines.push(`   描述: ${sa.description}`);
+          listLines.push(`   模型: ${sa.model.endpoint.provider} - ${sa.model.endpoint.model}`);
+          listLines.push("");
+        }
+        await prompter.note(listLines.join("\n"), "子智能体列表");
+      }
+      continue;
+    }
+
+    if (action === "done") {
+      continueConfiguring = false;
+      break;
+    }
+
+    if (action === "create") {
+      let continueCreating = true;
+
+      while (continueCreating) {
+        const createType = await prompter.select({
+          message: "创建方式",
+          options: [
+            { value: "template", label: "从模板选择", hint: "基于预置模板创建" },
+            { value: "manual", label: "手动填写", hint: "完全自定义配置" },
+          ],
         });
 
-        if (agentConfig) {
-          nextConfig = applyAgentConfig(nextConfig, {
-            agentId: agentConfig.id,
-            name: agentConfig.name,
-            workspace: agentConfig.workspace,
-            identity: agentConfig.identity,
-            subagents: agentConfig.subagents,
-            tools: agentConfig.tools,
+        let config: SubagentConfig;
+
+        if (createType === "template") {
+          const templateOptions = getTemplateNames().map((t) => ({
+            value: t.id,
+            label: t.name,
+            hint: t.description.slice(0, 40) + "...",
+          }));
+
+          const selectedId = await prompter.select({
+            message: "选择子智能体模板",
+            options: templateOptions,
           });
-          await prompter.note(
-            `Agent added: ${agentConfig.name ?? agentConfig.id}\nWorkspace: ${agentConfig.workspace}`,
-            "Agent Created"
-          );
+
+          const template = getTemplateById(selectedId);
+          if (!template) {
+            await prompter.note("模板不存在", "错误");
+            break;
+          }
+
+          const name = await promptSubagentName(prompter);
+          const label = await promptSubagentLabel(prompter);
+          const description = await promptSubagentDescription(prompter);
+
+          config = createSubagentFromTemplate(template, {
+            id: label || `subagent-${Date.now()}`,
+            name: name || template.name,
+            description: description || template.exampleDescription,
+          });
+
+          const modifyModel = await prompter.confirm({
+            message: "是否修改模型配置？（当前使用模板默认模型）",
+            initialValue: false,
+          });
+
+          if (modifyModel) {
+            const provider = await promptModelProvider(prompter);
+            let baseUrl: string;
+            let server: VllmServerConfig | undefined;
+            
+            if (provider === "vllm" || provider === "sglang") {
+              const serverType = await promptServerType(prompter);
+              if (serverType === "remote") {
+                server = await promptRemoteServerConfig(prompter);
+                baseUrl = `http://${server.host}:${server.port}/v1`;
+              } else {
+                baseUrl = await promptBaseUrl(prompter, provider);
+              }
+            } else {
+              baseUrl = await promptBaseUrl(prompter, provider);
+            }
+            
+            const model = await promptModelName(prompter, provider);
+
+            config.model.endpoint = {
+              provider: provider as any,
+              baseUrl,
+              model,
+              server,
+            };
+          }
+        } else {
+          const name = await promptSubagentName(prompter);
+          const label = await promptSubagentLabel(prompter);
+          const description = await promptSubagentDescription(prompter);
+
+          const provider = await promptModelProvider(prompter);
+          let baseUrl: string;
+          let server: VllmServerConfig | undefined;
+          
+          if (provider === "vllm" || provider === "sglang") {
+            const serverType = await promptServerType(prompter);
+            if (serverType === "remote") {
+              server = await promptRemoteServerConfig(prompter);
+              baseUrl = `http://${server.host}:${server.port}/v1`;
+            } else {
+              baseUrl = await promptBaseUrl(prompter, provider);
+            }
+          } else {
+            baseUrl = await promptBaseUrl(prompter, provider);
+          }
+          
+          const model = await promptModelName(prompter, provider);
+
+          const endpoint: ModelEndpoint = {
+            provider: provider as any,
+            baseUrl,
+            model,
+            server,
+          };
+
+          config = {
+            id: label || `subagent-${Date.now()}`,
+            name: name || "自定义子智能体",
+            description,
+            model: {
+              endpoint,
+            },
+            behavior: {
+              autoLoad: true,
+              autoUnload: true,
+              unloadDelayMs: 5000,
+              temperature: 0.7,
+              maxTokens: 4096,
+            },
+          };
         }
-        break;
-      }
 
-      case "template": {
-        const templateOptions = PREDEFINED_AGENT_TEMPLATES.map((t) => ({
-          value: t.id,
-          label: `${t.name} (${t.id})`,
-          hint: t.description,
-        }));
+        config = await handleAIEnhancement(prompter, cfg, config);
+        addSubagent(config);
+        createSubagentWorkspaceFromConfig(config);
 
-        const selectedId = await prompter.select({
-          message: "Select agent template to add",
-          options: templateOptions,
+        await prompter.note(
+          `已创建子智能体: ${config.name}\n模型: ${config.model.endpoint.provider} - ${config.model.endpoint.model}`,
+          "创建成功"
+        );
+
+        continueCreating = await prompter.confirm({
+          message: "是否继续创建更多子智能体？",
+          initialValue: true,
         });
-
-        const selectedTemplate = PREDEFINED_AGENT_TEMPLATES.find((t) => t.id === selectedId);
-        if (selectedTemplate) {
-          const workspace = resolveAgentWorkspaceDir(nextConfig, selectedTemplate.id);
-          await ensureWorkspaceDir(resolveUserPath(workspace), runtime);
-          await createAgentSoulFile(resolveUserPath(workspace), selectedTemplate.identity);
-
-          nextConfig = applyAgentConfig(nextConfig, {
-            agentId: selectedTemplate.id,
-            name: selectedTemplate.name,
-            workspace,
-            identity: selectedTemplate.identity,
-            tools: selectedTemplate.tools,
-          });
-
-          await prompter.note(
-            `Agent added: ${selectedTemplate.name}\nWorkspace: ${workspace}`,
-            "Agent Created"
-          );
-        }
-        break;
-      }
-
-      case "defaults": {
-        nextConfig = await configureSubagentDefaults({ cfg: nextConfig, prompter });
-        break;
-      }
-
-      case "done": {
-        continueConfiguring = false;
-        break;
       }
     }
   }
 
-  const mainAgent = agents.find((a) => a.default) ?? agents[0];
-  if (mainAgent && !mainAgent.subagents?.allowAgents) {
-    const allAgentIds = getAgentsList(nextConfig)
-      .filter((a) => a.id !== mainAgent.id)
-      .map((a) => a.id);
+  await prompter.note(
+    "子智能体配置完成。可使用 'openclaw subagent list' 查看和管理。",
+    "配置完成"
+  );
 
-    if (allAgentIds.length > 0) {
-      const allowAll = await prompter.confirm({
-        message: "Allow main agent to create all types of sub-agents?",
-        initialValue: true,
-      });
-
-      if (allowAll) {
-        const mainIndex = findAgentEntryIndex(getAgentsList(nextConfig), mainAgent.id);
-        if (mainIndex >= 0) {
-          const list = [...(nextConfig.agents?.list ?? [])];
-          list[mainIndex] = {
-            ...list[mainIndex],
-            subagents: {
-              ...list[mainIndex].subagents,
-              allowAgents: ["*"],
-            },
-          };
-          nextConfig = {
-            ...nextConfig,
-            agents: {
-              ...nextConfig.agents,
-              list,
-            },
-          };
-        }
-      }
-    }
-  }
-
-  return nextConfig;
+  return cfg;
 }
-
-export { PREDEFINED_AGENT_TEMPLATES };

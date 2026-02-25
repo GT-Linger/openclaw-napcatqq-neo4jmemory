@@ -222,6 +222,13 @@
     "hintConfigured": "configured",
     "hintNeedsConfig": "needs configuration"
   },
+  "subagent": {
+    "injectTitle": "Available Subagents",
+    "injectIntro": "The following subagents are configured with their specialties:",
+    "injectDescription": "**Description**",
+    "injectModel": "**Model**",
+    "injectUsageNote": "**Usage**: When you need to use a subagent, first call the `available_subagents` tool to see the list of available subagents, then select the appropriate subagent for the task."
+  },
   "common": {
     "required": "Required",
     "yes": "Yes",

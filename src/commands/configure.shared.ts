@@ -15,6 +15,7 @@ export const CONFIGURE_WIZARD_SECTIONS = [
   "daemon",
   "channels",
   "skills",
+  "subagents",
   "health",
 ] as const;
 
@@ -65,6 +66,7 @@ export const CONFIGURE_SECTION_OPTIONS: Array<{
     hint: "Link WhatsApp/Telegram/etc and defaults",
   },
   { value: "skills", label: "Skills", hint: "Install/enable workspace skills" },
+  { value: "subagents", label: "Subagents", hint: "Create and manage subagents with AI models" },
   {
     value: "health",
     label: "Health check",

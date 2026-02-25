@@ -1,0 +1,59 @@
+[
+  {
+    "id": "qwen-main",
+    "name": "Qwen 主智能体模型",
+    "modelPath": "qwen/Qwen2.5-7B-Instruct",
+    "baseUrl": "http://192.168.1.100",
+    "server": {
+      "type": "remote",
+      "host": "192.168.1.100",
+      "port": 8000,
+      "ssh": {
+        "enabled": true,
+        "host": "192.168.1.100",
+        "username": "gpuuser",
+        "privateKeyPath": "~/.ssh/id_rsa"
+      }
+    },
+    "isMainAgent": true,
+    "description": "主智能体专用模型 - 永久运行，不会被停止"
+  },
+  {
+    "id": "deepseek-coder",
+    "name": "DeepSeek Coder (子智能体)",
+    "modelPath": "/models/deepseek-coder-6.7b-instruct",
+    "baseUrl": "http://192.168.1.100",
+    "server": {
+      "type": "remote",
+      "host": "192.168.1.100",
+      "port": 8001,
+      "ssh": {
+        "enabled": true,
+        "host": "192.168.1.100",
+        "username": "gpuuser",
+        "privateKeyPath": "~/.ssh/id_rsa"
+      }
+    },
+    "isSubagentOnly": true,
+    "description": "子智能体专用 - 任务完成后自动停止"
+  },
+  {
+    "id": "deepseek-math",
+    "name": "DeepSeek Math (子智能体)",
+    "modelPath": "/models/deepseek-math-7b-instruct",
+    "baseUrl": "http://192.168.1.100",
+    "server": {
+      "type": "remote",
+      "host": "192.168.1.100",
+      "port": 8002,
+      "ssh": {
+        "enabled": true,
+        "host": "192.168.1.100",
+        "username": "gpuuser",
+        "privateKeyPath": "~/.ssh/id_rsa"
+      }
+    },
+    "isSubagentOnly": true,
+    "description": "子智能体专用 - 任务完成后自动停止"
+  }
+]

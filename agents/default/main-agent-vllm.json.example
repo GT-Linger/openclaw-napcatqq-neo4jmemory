@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "modelId": "qwen-main",
+  "baseUrl": "http://192.168.1.100:8000/v1",
+  "isPersistent": true
+}

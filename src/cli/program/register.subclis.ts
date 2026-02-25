@@ -270,6 +270,15 @@ const entries: SubCliEntry[] = [
     },
   },
   {
+    name: "subagent",
+    description: "Create and manage subagents with AI models",
+    hasSubcommands: true,
+    register: async (program) => {
+      const mod = await import("../subagent-cli.js");
+      mod.registerSubagentCli(program);
+    },
+  },
+  {
     name: "update",
     description: "Update OpenClaw and inspect update channel status",
     hasSubcommands: true,
