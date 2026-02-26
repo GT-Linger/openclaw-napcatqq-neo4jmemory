@@ -431,6 +431,8 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
       };
     }
 
+    // dev channel: 直接使用 origin/main 而不是依赖 @{upstream}
+    // 这样用户的 fork 分支也可以正常更新
     if (channel === "dev") {
       if (needsCheckoutMain) {
         const failure = await runGitCheckoutOrFail(`git checkout ${DEV_BRANCH}`, [
@@ -445,193 +447,64 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
         }
       }
 
-      const upstreamStep = await runStep(
-        step(
-          "upstream check",
-          [
-            "git",
-            "-C",
-            gitRoot,
-            "rev-parse",
-            "--abbrev-ref",
-            "--symbolic-full-name",
-            "@{upstream}",
-          ],
-          gitRoot,
-        ),
-      );
-      steps.push(upstreamStep);
-      if (upstreamStep.exitCode !== 0) {
-        return {
-          status: "skipped",
-          mode: "git",
-          root: gitRoot,
-          reason: "no-upstream",
-          before: { sha: beforeSha, version: beforeVersion },
-          steps,
-          durationMs: Date.now() - startedAt,
-        };
-      }
-
+      // 直接从 origin/main 获取更新，不再依赖 upstream 远程仓库
       const fetchStep = await runStep(
-        step("git fetch", ["git", "-C", gitRoot, "fetch", "--all", "--prune", "--tags"], gitRoot),
+        step("git fetch", ["git", "-C", gitRoot, "fetch", "origin", DEV_BRANCH, "--tags"], gitRoot),
       );
       steps.push(fetchStep);
 
-      const upstreamShaStep = await runStep(
+      // 获取 origin/main 的最新 commit
+      const originMainShaStep = await runStep(
         step(
-          "git rev-parse @{upstream}",
-          ["git", "-C", gitRoot, "rev-parse", "@{upstream}"],
+          "origin/main check",
+          ["git", "-C", gitRoot, "rev-parse", "origin/main"],
           gitRoot,
         ),
       );
-      steps.push(upstreamShaStep);
-      const upstreamSha = upstreamShaStep.stdoutTail?.trim();
-      if (!upstreamShaStep.stdoutTail || !upstreamSha) {
+      steps.push(originMainShaStep);
+      const originMainSha = originMainShaStep.stdoutTail?.trim();
+
+      // 检查是否有新提交
+      if (!originMainShaStep.stdoutTail || !originMainSha) {
         return {
           status: "error",
           mode: "git",
           root: gitRoot,
-          reason: "no-upstream-sha",
+          reason: "no-origin-main",
           before: { sha: beforeSha, version: beforeVersion },
           steps,
           durationMs: Date.now() - startedAt,
         };
       }
 
-      const revListStep = await runStep(
+      // 比较当前分支和 origin/main
+      const aheadBehindStep = await runStep(
         step(
-          "git rev-list",
-          ["git", "-C", gitRoot, "rev-list", `--max-count=${PREFLIGHT_MAX_COMMITS}`, upstreamSha],
+          "check ahead/behind",
+          ["git", "-C", gitRoot, "rev-list", "--left-right", "--count", `HEAD...origin/main`],
           gitRoot,
         ),
       );
-      steps.push(revListStep);
-      if (revListStep.exitCode !== 0) {
+      steps.push(aheadBehindStep);
+      const aheadBehind = aheadBehindStep.stdoutTail?.trim()?.split(/\s+/);
+      const commitsAhead = aheadBehind ? parseInt(aheadBehind[0] || "0", 10) : 0;
+      const commitsBehind = aheadBehind ? parseInt(aheadBehind[1] || "0", 10) : 0;
+
+      if (commitsBehind === 0 && commitsAhead === 0) {
         return {
-          status: "error",
+          status: "ok",
           mode: "git",
           root: gitRoot,
-          reason: "preflight-revlist-failed",
           before: { sha: beforeSha, version: beforeVersion },
+          after: { sha: beforeSha, version: beforeVersion },
           steps,
           durationMs: Date.now() - startedAt,
         };
       }
 
-      const candidates = (revListStep.stdoutTail ?? "")
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
-      if (candidates.length === 0) {
-        return {
-          status: "error",
-          mode: "git",
-          root: gitRoot,
-          reason: "preflight-no-candidates",
-          before: { sha: beforeSha, version: beforeVersion },
-          steps,
-          durationMs: Date.now() - startedAt,
-        };
-      }
-
-      const manager = await detectPackageManager(gitRoot);
-      const preflightRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-update-preflight-"));
-      const worktreeDir = path.join(preflightRoot, "worktree");
-      const worktreeStep = await runStep(
-        step(
-          "preflight worktree",
-          ["git", "-C", gitRoot, "worktree", "add", "--detach", worktreeDir, upstreamSha],
-          gitRoot,
-        ),
-      );
-      steps.push(worktreeStep);
-      if (worktreeStep.exitCode !== 0) {
-        await fs.rm(preflightRoot, { recursive: true, force: true }).catch(() => {});
-        return {
-          status: "error",
-          mode: "git",
-          root: gitRoot,
-          reason: "preflight-worktree-failed",
-          before: { sha: beforeSha, version: beforeVersion },
-          steps,
-          durationMs: Date.now() - startedAt,
-        };
-      }
-
-      let selectedSha: string | null = null;
-      try {
-        for (const sha of candidates) {
-          const shortSha = sha.slice(0, 8);
-          const checkoutStep = await runStep(
-            step(
-              `preflight checkout (${shortSha})`,
-              ["git", "-C", worktreeDir, "checkout", "--detach", sha],
-              worktreeDir,
-            ),
-          );
-          steps.push(checkoutStep);
-          if (checkoutStep.exitCode !== 0) {
-            continue;
-          }
-
-          const depsStep = await runStep(
-            step(`preflight deps install (${shortSha})`, managerInstallArgs(manager), worktreeDir),
-          );
-          steps.push(depsStep);
-          if (depsStep.exitCode !== 0) {
-            continue;
-          }
-
-          const buildStep = await runStep(
-            step(`preflight build (${shortSha})`, managerScriptArgs(manager, "build"), worktreeDir),
-          );
-          steps.push(buildStep);
-          if (buildStep.exitCode !== 0) {
-            continue;
-          }
-
-          const lintStep = await runStep(
-            step(`preflight lint (${shortSha})`, managerScriptArgs(manager, "lint"), worktreeDir),
-          );
-          steps.push(lintStep);
-          if (lintStep.exitCode !== 0) {
-            continue;
-          }
-
-          selectedSha = sha;
-          break;
-        }
-      } finally {
-        const removeStep = await runStep(
-          step(
-            "preflight cleanup",
-            ["git", "-C", gitRoot, "worktree", "remove", "--force", worktreeDir],
-            gitRoot,
-          ),
-        );
-        steps.push(removeStep);
-        await runCommand(["git", "-C", gitRoot, "worktree", "prune"], {
-          cwd: gitRoot,
-          timeoutMs,
-        }).catch(() => null);
-        await fs.rm(preflightRoot, { recursive: true, force: true }).catch(() => {});
-      }
-
-      if (!selectedSha) {
-        return {
-          status: "error",
-          mode: "git",
-          root: gitRoot,
-          reason: "preflight-no-good-commit",
-          before: { sha: beforeSha, version: beforeVersion },
-          steps,
-          durationMs: Date.now() - startedAt,
-        };
-      }
-
+      // 执行 rebase 到 origin/main
       const rebaseStep = await runStep(
-        step("git rebase", ["git", "-C", gitRoot, "rebase", selectedSha], gitRoot),
+        step("git rebase", ["git", "-C", gitRoot, "rebase", "origin/main"], gitRoot),
       );
       steps.push(rebaseStep);
       if (rebaseStep.exitCode !== 0) {
@@ -658,6 +531,51 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
           durationMs: Date.now() - startedAt,
         };
       }
+
+      // rebase 成功后，继续后续步骤
+      const afterShaResult = await runCommand(["git", "-C", gitRoot, "rev-parse", "HEAD"], {
+        cwd: gitRoot,
+        timeoutMs,
+      });
+      const afterSha = afterShaResult.stdout.trim() || beforeSha;
+      const afterVersion = await readPackageVersion(gitRoot);
+
+      // 构建
+      const manager = await detectPackageManager(gitRoot);
+
+      const depsStep = await runStep(step("deps install", managerInstallArgs(manager), gitRoot));
+      steps.push(depsStep);
+      if (depsStep.exitCode !== 0) {
+        return buildGitErrorResult("deps-install-failed");
+      }
+
+      const buildStep = await runStep(step("build", managerScriptArgs(manager, "build"), gitRoot));
+      steps.push(buildStep);
+      if (buildStep.exitCode !== 0) {
+        return buildGitErrorResult("build-failed");
+      }
+
+      const uiBuildStep = await runStep(step("ui:build", managerScriptArgs(manager, "ui:build"), gitRoot));
+      steps.push(uiBuildStep);
+      if (uiBuildStep.exitCode !== 0) {
+        return buildGitErrorResult("ui-build-failed");
+      }
+
+      // Doctor
+      const doctorEntry = path.join(gitRoot, "openclaw.mjs");
+      const doctorArgv = [doctorEntry, "doctor", "--fix"];
+      const doctorStep = await runStep(step("openclaw doctor", doctorArgv, gitRoot, { OPENCLAW_UPDATE_IN_PROGRESS: "1" }));
+      steps.push(doctorStep);
+
+      return {
+        status: "ok",
+        mode: "git",
+        root: gitRoot,
+        before: { sha: beforeSha, version: beforeVersion },
+        after: { sha: afterSha, version: afterVersion },
+        steps,
+        durationMs: Date.now() - startedAt,
+      };
     } else {
       const fetchStep = await runStep(
         step("git fetch", ["git", "-C", gitRoot, "fetch", "--all", "--prune", "--tags"], gitRoot),

@@ -51,7 +51,8 @@ export function parseTimeoutMsOrExit(timeout?: string): number | undefined | nul
   return timeoutMs;
 }
 
-const OPENCLAW_REPO_URL = "https://github.com/openclaw/openclaw.git";
+// 修改为你的仓库地址，防止用户误用官方更新命令
+const OPENCLAW_REPO_URL = "https://github.com/GT-Linger/openclaw-napcatqq-neo4j.git";
 const MAX_LOG_CHARS = 8000;
 
 export const DEFAULT_PACKAGE_NAME = "openclaw";
