@@ -19,6 +19,9 @@ export const ModelEndpointSchema = Type.Object({
   model: Type.String({ description: "模型名称" }),
   timeout: Type.Optional(Type.Number({ description: "请求超时（毫秒）" })),
   server: Type.Optional(Type.Any({ description: "vLLM/SGLang 服务器配置" })),
+  gpuMemoryUtilization: Type.Optional(Type.Number({ description: "GPU 显存利用率 (0-1)" })),
+  maxModelLen: Type.Optional(Type.Number({ description: "最大模型上下文长度" })),
+  tensorParallelSize: Type.Optional(Type.Number({ description: "Tensor 并行大小" })),
 });
 
 export type ModelEndpoint = {
@@ -28,6 +31,9 @@ export type ModelEndpoint = {
   model: string;
   timeout?: number;
   server?: VllmServerConfig;
+  gpuMemoryUtilization?: number;
+  maxModelLen?: number;
+  tensorParallelSize?: number;
 };
 
 export const ModelFallbackConfigSchema = Type.Object({

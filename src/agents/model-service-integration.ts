@@ -138,11 +138,11 @@ export async function startSubagentModelService(
   }
 
   if (provider === "vllm") {
-    return startSubagentVllm(subagentRunId, subagent.id, agentDir);
+    return startSubagentVllm(subagentRunId, subagent.id, agentDir, subagent);
   }
 
   if (provider === "sglang") {
-    return startSubagentSglang(subagentRunId, subagent.id, agentDir);
+    return startSubagentSglang(subagentRunId, subagent.id, agentDir, subagent);
   }
 
   console.error(`[ModelService] Unsupported provider: ${provider}`);
@@ -222,6 +222,7 @@ async function startSubagentVllm(
   subagentRunId: string,
   subagentLabel: string,
   agentDir?: string,
+  subagent?: SubagentConfig,
 ): Promise<string | null> {
   const binding = await getSubagentVllmBinding(subagentLabel, agentDir);
   if (!binding) {
@@ -237,16 +238,19 @@ async function startSubagentVllm(
     return null;
   }
 
+  const endpointGpuConfig = subagent?.model?.endpoint;
   const modelConfig: VllmModelConfig = {
     id: modelEntry.id,
     name: modelEntry.name,
     modelPath: modelEntry.modelPath,
-    baseUrl: modelEntry.baseUrl,
+    baseUrl: modelEntry.baseUrl || "http://127.0.0.1",
     apiKey: modelEntry.apiKey,
-    gpuMemoryUtilization: modelEntry.gpuMemoryUtilization,
-    maxModelLen: modelEntry.maxModelLen,
-    tensorParallelSize: modelEntry.tensorParallelSize,
+    gpuMemoryUtilization: endpointGpuConfig?.gpuMemoryUtilization ?? modelEntry.gpuMemoryUtilization,
+    maxModelLen: endpointGpuConfig?.maxModelLen ?? modelEntry.maxModelLen,
+    tensorParallelSize: endpointGpuConfig?.tensorParallelSize ?? modelEntry.tensorParallelSize,
     port: modelEntry.port,
+    server: modelEntry.server,
+    deploymentType: modelEntry.deploymentType,
   };
 
   const manager = getVllmModelManager();
@@ -259,6 +263,25 @@ async function startSubagentVllm(
     });
 
     console.log(`[ModelService] Started vLLM for subagent ${subagentRunId} (${subagentLabel}) at ${processEntry.baseUrl}`);
+
+    const url = new URL(processEntry.baseUrl);
+    const host = url.hostname;
+    const port = parseInt(url.port, 10) || (url.protocol === "https:" ? 443 : 80);
+    
+    const bindings = await loadSubagentVllmBindings(agentDir);
+    if (bindings[subagentLabel]) {
+      const existingServer = bindings[subagentLabel].server || { type: "local" as const };
+      const serverConfig = existingServer as { type: "local" | "remote" | "docker"; host?: string; port?: number };
+      bindings[subagentLabel].server = {
+        ...serverConfig,
+        type: serverConfig.type || "local",
+        host,
+        port,
+      };
+      await saveSubagentVllmBindings(bindings, agentDir);
+      console.log(`[ModelService] Updated subagent binding with dynamic port: ${host}:${port}`);
+    }
+
     return processEntry.baseUrl;
   } catch (err) {
     console.error(`[ModelService] Failed to start vLLM for subagent ${subagentRunId}:`, err);
@@ -297,6 +320,7 @@ async function startSubagentSglang(
   subagentRunId: string,
   subagentLabel: string,
   agentDir?: string,
+  subagent?: SubagentConfig,
 ): Promise<string | null> {
   const binding = await getSubagentVllmBinding(subagentLabel, agentDir);
   if (!binding) {
@@ -312,16 +336,19 @@ async function startSubagentSglang(
     return null;
   }
 
+  const endpointGpuConfig = subagent?.model?.endpoint;
   const modelConfig: SglangModelConfig = {
     id: modelEntry.id,
     name: modelEntry.name,
     modelPath: modelEntry.modelPath,
-    baseUrl: modelEntry.baseUrl,
+    baseUrl: modelEntry.baseUrl || "http://127.0.0.1",
     apiKey: modelEntry.apiKey,
-    gpuMemoryUtilization: modelEntry.gpuMemoryUtilization,
-    maxModelLen: modelEntry.maxModelLen,
-    tensorParallelSize: modelEntry.tensorParallelSize,
+    gpuMemoryUtilization: endpointGpuConfig?.gpuMemoryUtilization ?? modelEntry.gpuMemoryUtilization,
+    maxModelLen: endpointGpuConfig?.maxModelLen ?? modelEntry.maxModelLen,
+    tensorParallelSize: endpointGpuConfig?.tensorParallelSize ?? modelEntry.tensorParallelSize,
     port: modelEntry.port,
+    server: modelEntry.server,
+    deploymentType: modelEntry.deploymentType,
   };
 
   const manager = getSglangModelManager();
@@ -334,6 +361,25 @@ async function startSubagentSglang(
     });
 
     console.log(`[ModelService] Started SGLang for subagent ${subagentRunId} (${subagentLabel}) at ${processEntry.baseUrl}`);
+
+    const url = new URL(processEntry.baseUrl);
+    const host = url.hostname;
+    const port = parseInt(url.port, 10) || (url.protocol === "https:" ? 443 : 80);
+    
+    const bindings = await loadSubagentVllmBindings(agentDir);
+    if (bindings[subagentLabel]) {
+      const existingServer = bindings[subagentLabel].server || { type: "local" as const };
+      const serverConfig = existingServer as { type: "local" | "remote" | "docker"; host?: string; port?: number };
+      bindings[subagentLabel].server = {
+        ...serverConfig,
+        type: serverConfig.type || "local",
+        host,
+        port,
+      };
+      await saveSubagentVllmBindings(bindings, agentDir);
+      console.log(`[ModelService] Updated SGLang subagent binding with dynamic port: ${host}:${port}`);
+    }
+
     return processEntry.baseUrl;
   } catch (err) {
     console.error(`[ModelService] Failed to start SGLang for subagent ${subagentRunId}:`, err);

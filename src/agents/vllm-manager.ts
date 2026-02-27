@@ -16,6 +16,7 @@ export interface VllmModelConfig {
   env?: Record<string, string>;
   isMainAgent?: boolean;
   isSubagentOnly?: boolean;
+  deploymentType?: "command" | "docker";
 }
 
 export interface VllmProcessEntry {
@@ -29,6 +30,7 @@ export interface VllmProcessEntry {
   baseUrl: string;
   serverType: VllmServerType;
   remotePid?: number;
+  containerId?: string;
   owner: "main" | "subagent";
   isPersistent: boolean;
   startedAt: number;
@@ -100,9 +102,17 @@ class VllmModelManager {
     host: string;
     port: number;
     ssh?: VllmServerConfig["ssh"];
+    docker?: VllmServerConfig["docker"];
   } {
     const serverConfig = modelConfig.server;
-    const type = serverConfig?.type ?? "local";
+    const deploymentType = modelConfig.deploymentType;
+    
+    let type: VllmServerType;
+    if (deploymentType === "docker") {
+      type = "docker";
+    } else {
+      type = serverConfig?.type ?? "local";
+    }
     
     const host = serverConfig?.host ?? modelConfig.baseUrl.replace(/^http(s)?:\/\//, "").split(":")[0] ?? "127.0.0.1";
     const port = serverConfig?.port ?? modelConfig.port ?? this.getNextPort();
@@ -112,6 +122,7 @@ class VllmModelManager {
       host,
       port,
       ssh: serverConfig?.ssh,
+      docker: serverConfig?.docker,
     };
   }
 
@@ -341,6 +352,258 @@ class VllmModelManager {
     await this.sleep(1000);
   }
 
+  private buildDockerArgs(port: number, modelConfig: VllmModelConfig): string[] {
+    const dockerConfig = modelConfig.server?.docker;
+    if (!dockerConfig) {
+      throw new Error("Docker configuration is required for Docker deployment");
+    }
+
+    const args = [
+      "run",
+      "--rm",
+      "-d",
+      "--name", dockerConfig.containerName || `vllm-${modelConfig.id}-${port}`,
+      "-p", `${port}:${port}`,
+    ];
+
+    if (dockerConfig.gpuDevices) {
+      args.push("--gpus", `"device=${dockerConfig.gpuDevices}"`);
+    } else {
+      args.push("--gpus", "all");
+    }
+
+    if (dockerConfig.volumes && dockerConfig.volumes.length > 0) {
+      for (const vol of dockerConfig.volumes) {
+        args.push("-v", vol);
+      }
+    }
+
+    if (dockerConfig.envVars) {
+      for (const [key, value] of Object.entries(dockerConfig.envVars)) {
+        args.push("-e", `${key}=${value}`);
+      }
+    }
+
+    args.push("-e", `VLLM_HOST_IP=0.0.0.0`);
+    args.push("-e", `VLLM_PORT=${port}`);
+
+    if (modelConfig.gpuMemoryUtilization) {
+      args.push("-e", `VLLM_GPU_MEMORY_UTILIZATION=${modelConfig.gpuMemoryUtilization}`);
+    }
+    if (modelConfig.maxModelLen) {
+      args.push("-e", `VLLM_MAX_MODEL_LEN=${modelConfig.maxModelLen}`);
+    }
+
+    if (dockerConfig.extraArgs) {
+      args.push(...dockerConfig.extraArgs.split(" ").filter(Boolean));
+    }
+
+    args.push(dockerConfig.image);
+    args.push("vllm", "serve", modelConfig.modelPath, "--host", "0.0.0.0", "--port", String(port));
+
+    if (modelConfig.tensorParallelSize && modelConfig.tensorParallelSize > 1) {
+      args.push("--tensor-parallel-size", String(modelConfig.tensorParallelSize));
+    }
+
+    return args;
+  }
+
+  private async startLocalDocker(
+    port: number,
+    modelConfig: VllmModelConfig,
+    processEntry: VllmProcessEntry,
+  ): Promise<void> {
+    const dockerConfig = modelConfig.server?.docker;
+    if (!dockerConfig) {
+      throw new Error("Docker configuration is required for Docker deployment");
+    }
+
+    const args = this.buildDockerArgs(port, modelConfig);
+    const containerName = dockerConfig.containerName || `vllm-${modelConfig.id}-${port}`;
+
+    console.log(`[vLLM] Starting local Docker vLLM: docker ${args.join(" ")}`);
+
+    processEntry.process = spawn("docker", args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    if (processEntry.process.stdout) {
+      processEntry.process.stdout.on("data", (data: Buffer) => {
+        const output = data.toString();
+        console.log(`[vLLM] Docker stdout: ${output}`);
+      });
+    }
+
+    if (processEntry.process.stderr) {
+      processEntry.process.stderr.on("data", (data: Buffer) => {
+        console.error(`[vLLM] Docker stderr: ${data.toString()}`);
+      });
+    }
+
+    processEntry.pid = processEntry.process.pid;
+    processEntry.containerId = containerName;
+  }
+
+  private async startRemoteDocker(
+    host: string,
+    port: number,
+    modelConfig: VllmModelConfig,
+    sshConfig: VllmServerConfig["ssh"],
+    processEntry: VllmProcessEntry,
+  ): Promise<void> {
+    const dockerConfig = modelConfig.server?.docker;
+    if (!dockerConfig) {
+      throw new Error("Docker configuration is required for Docker deployment");
+    }
+
+    const args = this.buildDockerArgs(port, modelConfig);
+    const containerName = dockerConfig.containerName || `vllm-${modelConfig.id}-${port}`;
+    const dockerArgsStr = args.join(" ");
+
+    const sshHost = sshConfig?.host ?? host;
+    const sshUser = sshConfig?.username ?? "root";
+    const sshPort = sshConfig?.port ?? 22;
+
+    const sshArgs = [
+      "-p", String(sshPort),
+      "-o", "ConnectTimeout=10",
+      "-o", "StrictHostKeyChecking=accept-new",
+      ...(sshConfig?.privateKeyPath ? ["-i", sshConfig.privateKeyPath] : []),
+      `${sshUser}@${sshHost}`,
+      `docker ${dockerArgsStr}`,
+    ];
+
+    console.log(`[vLLM] Starting remote Docker vLLM on ${sshUser}@${sshHost}:${port}`);
+
+    const containerProcess = spawn("ssh", sshArgs, { stdio: ["ignore", "pipe", "pipe"] });
+
+    let containerId = "";
+
+    if (containerProcess.stdout) {
+      containerProcess.stdout.on("data", (data: Buffer) => {
+        containerId += data.toString();
+      });
+    }
+
+    if (containerProcess.stderr) {
+      containerProcess.stderr.on("data", (data: Buffer) => {
+        console.error(`[vLLM] SSH Docker stderr: ${data.toString()}`);
+      });
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        containerProcess.kill();
+        reject(new Error(`Docker start timeout after ${SSH_CONNECTION_TIMEOUT_MS}ms`));
+      }, SSH_CONNECTION_TIMEOUT_MS);
+
+      containerProcess.on("close", (code) => {
+        clearTimeout(timeout);
+        if (code === 0) {
+          processEntry.containerId = containerId.trim().substring(0, 12);
+          console.log(`[vLLM] Remote Docker vLLM started with container ${processEntry.containerId}`);
+          resolve();
+        } else {
+          reject(new Error(`Docker start failed with code ${code}`));
+        }
+      });
+      containerProcess.on("error", (err) => {
+        clearTimeout(timeout);
+        reject(new Error(`SSH process error: ${err.message}`));
+      });
+    });
+  }
+
+  private async stopLocalDocker(processEntry: VllmProcessEntry): Promise<void> {
+    if (!processEntry.containerId) {
+      console.warn(`[vLLM] No container ID for ${processEntry.id}`);
+      return;
+    }
+
+    console.log(`[vLLM] Stopping local Docker container ${processEntry.containerId}`);
+
+    await new Promise<void>((resolve) => {
+      const stopProcess = spawn("docker", ["stop", processEntry.containerId!], {
+        stdio: "ignore",
+      });
+
+      const timeout = setTimeout(() => {
+        stopProcess.kill();
+        console.warn(`[vLLM] Timeout while stopping container ${processEntry.containerId}`);
+        resolve();
+      }, this.config.shutdownTimeout);
+
+      stopProcess.on("close", (code) => {
+        clearTimeout(timeout);
+        if (code === 0) {
+          console.log(`[vLLM] Docker container ${processEntry.containerId} stopped`);
+        } else {
+          console.warn(`[vLLM] Docker stop command exited with code ${code}`);
+        }
+        resolve();
+      });
+      stopProcess.on("error", (err) => {
+        clearTimeout(timeout);
+        console.error(`[vLLM] Failed to stop Docker container: ${err.message}`);
+        resolve();
+      });
+    });
+
+    await this.sleep(1000);
+  }
+
+  private async stopRemoteDocker(
+    host: string,
+    sshConfig: VllmServerConfig["ssh"],
+    processEntry: VllmProcessEntry,
+  ): Promise<void> {
+    if (!processEntry.containerId) {
+      console.warn(`[vLLM] No container ID for ${processEntry.id}`);
+      return;
+    }
+
+    const sshHost = sshConfig?.host ?? host;
+    const sshUser = sshConfig?.username ?? "root";
+    const sshPort = sshConfig?.port ?? 22;
+
+    const sshArgs = [
+      "-p", String(sshPort),
+      "-o", "ConnectTimeout=10",
+      ...(sshConfig?.privateKeyPath ? ["-i", sshConfig.privateKeyPath] : []),
+      `${sshUser}@${sshHost}`,
+      `docker stop ${processEntry.containerId}`,
+    ];
+
+    console.log(`[vLLM] Stopping remote Docker container ${processEntry.containerId}`);
+
+    await new Promise<void>((resolve) => {
+      const stopProcess = spawn("ssh", sshArgs, { stdio: "ignore" });
+
+      const timeout = setTimeout(() => {
+        stopProcess.kill();
+        console.warn(`[vLLM] Timeout while stopping remote container ${processEntry.containerId}`);
+        resolve();
+      }, SSH_COMMAND_TIMEOUT_MS);
+
+      stopProcess.on("close", (code) => {
+        clearTimeout(timeout);
+        if (code === 0) {
+          console.log(`[vLLM] Remote Docker container ${processEntry.containerId} stopped`);
+        } else {
+          console.warn(`[vLLM] Remote docker stop exited with code ${code}`);
+        }
+        resolve();
+      });
+      stopProcess.on("error", (err) => {
+        clearTimeout(timeout);
+        console.error(`[vLLM] Failed to stop remote container: ${err.message}`);
+        resolve();
+      });
+    });
+
+    await this.sleep(1000);
+  }
+
   async startMainAgentVllm(modelConfig: VllmModelConfig): Promise<VllmProcessEntry> {
     const modelId = modelConfig.id;
 
@@ -359,7 +622,7 @@ class VllmModelManager {
 
     try {
       const serverConfig = this.resolveServerConfig(modelConfig);
-      const { type, host, port, ssh } = serverConfig;
+      const { type, host, port, ssh, docker } = serverConfig;
 
       const baseUrl = `http://${host}:${port}/v1`;
 
@@ -378,7 +641,13 @@ class VllmModelManager {
 
       console.log(`[vLLM] Starting main agent vLLM with model ${modelId} on ${host}:${port} (persistent)`);
 
-      if (type === "local") {
+      if (type === "docker") {
+        if (ssh) {
+          await this.startRemoteDocker(host, port, modelConfig, ssh, processEntry);
+        } else {
+          await this.startLocalDocker(port, modelConfig, processEntry);
+        }
+      } else if (type === "local") {
         await this.startLocalVllm(port, modelConfig, processEntry);
       } else {
         await this.startRemoteVllm(host, port, modelConfig, ssh, processEntry);
@@ -441,7 +710,13 @@ class VllmModelManager {
 
       console.log(`[vLLM] Starting subagent ${subagentRunId} with model ${modelConfig.id} on ${host}:${port}`);
 
-      if (type === "local") {
+      if (type === "docker") {
+        if (ssh) {
+          await this.startRemoteDocker(host, port, modelConfig, ssh, processEntry);
+        } else {
+          await this.startLocalDocker(port, modelConfig, processEntry);
+        }
+      } else if (type === "local") {
         await this.startLocalVllm(port, modelConfig, processEntry);
       } else {
         await this.startRemoteVllm(host, port, modelConfig, ssh, processEntry);
@@ -481,7 +756,14 @@ class VllmModelManager {
 
     processEntry.status = "stopping";
 
-    if (processEntry.serverType === "local") {
+    if (processEntry.serverType === "docker") {
+      const ssh = processEntry.modelConfig.server?.ssh;
+      if (ssh) {
+        await this.stopRemoteDocker(processEntry.modelConfig.baseUrl, ssh, processEntry);
+      } else {
+        await this.stopLocalDocker(processEntry);
+      }
+    } else if (processEntry.serverType === "local") {
       await this.stopLocalVllm(processEntry);
     } else {
       const ssh = processEntry.modelConfig.server?.ssh;
@@ -536,7 +818,14 @@ class VllmModelManager {
 
     processEntry.status = "stopping";
 
-    if (processEntry.serverType === "local") {
+    if (processEntry.serverType === "docker") {
+      const ssh = processEntry.modelConfig.server?.ssh;
+      if (ssh) {
+        await this.stopRemoteDocker(processEntry.modelConfig.baseUrl, ssh, processEntry);
+      } else {
+        await this.stopLocalDocker(processEntry);
+      }
+    } else if (processEntry.serverType === "local") {
       await this.stopLocalVllm(processEntry);
     } else {
       const ssh = processEntry.modelConfig.server?.ssh;

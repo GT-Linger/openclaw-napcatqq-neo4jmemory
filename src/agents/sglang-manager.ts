@@ -15,10 +15,11 @@ export interface SglangModelConfig {
   env?: Record<string, string>;
   isMainAgent?: boolean;
   isSubagentOnly?: boolean;
+  deploymentType?: "command" | "docker";
 }
 
 export interface SglangServerConfig {
-  type: "local" | "remote";
+  type: "local" | "remote" | "docker";
   host?: string;
   port?: number;
   ssh?: {
@@ -26,11 +27,19 @@ export interface SglangServerConfig {
     port?: number;
     username?: string;
     privateKeyPath?: string;
-    sglangPath?: string;
+  };
+  docker?: {
+    enabled: boolean;
+    image: string;
+    containerName?: string;
+    gpuDevices?: string;
+    volumes?: string[];
+    envVars?: Record<string, string>;
+    extraArgs?: string;
   };
 }
 
-export type SglangServerType = "local" | "remote";
+export type SglangServerType = "local" | "remote" | "docker";
 
 export interface SglangProcessEntry {
   id: string;
@@ -43,6 +52,7 @@ export interface SglangProcessEntry {
   baseUrl: string;
   serverType: SglangServerType;
   remotePid?: number;
+  containerId?: string;
   owner: "main" | "subagent";
   isPersistent: boolean;
   startedAt: number;
@@ -110,9 +120,17 @@ class SglangModelManager {
     host: string;
     port: number;
     ssh?: SglangServerConfig["ssh"];
+    docker?: SglangServerConfig["docker"];
   } {
     const serverConfig = modelConfig.server;
-    const type = serverConfig?.type ?? "local";
+    const deploymentType = modelConfig.deploymentType;
+    
+    let type: SglangServerType;
+    if (deploymentType === "docker") {
+      type = "docker";
+    } else {
+      type = serverConfig?.type ?? "local";
+    }
     
     const host = serverConfig?.host ?? modelConfig.baseUrl.replace(/^http(s)?:\/\//, "").split(":")[0] ?? "127.0.0.1";
     const port = serverConfig?.port ?? modelConfig.port ?? this.getNextPort();
@@ -122,6 +140,7 @@ class SglangModelManager {
       host,
       port,
       ssh: serverConfig?.ssh,
+      docker: serverConfig?.docker,
     };
   }
 
@@ -142,6 +161,207 @@ class SglangModelManager {
     }
 
     return args;
+  }
+
+  private buildDockerArgs(port: number, modelConfig: SglangModelConfig): string[] {
+    const dockerConfig = modelConfig.server?.docker;
+    if (!dockerConfig) {
+      throw new Error("Docker configuration is required for Docker deployment");
+    }
+
+    const args = [
+      "run",
+      "--rm",
+      "-d",
+      "--name", dockerConfig.containerName || `sglang-${modelConfig.id}-${port}`,
+      "-p", `${port}:${port}`,
+    ];
+
+    if (dockerConfig.gpuDevices) {
+      args.push("--gpus", `"device=${dockerConfig.gpuDevices}"`);
+    } else {
+      args.push("--gpus", "all");
+    }
+
+    if (dockerConfig.volumes && dockerConfig.volumes.length > 0) {
+      for (const vol of dockerConfig.volumes) {
+        args.push("-v", vol);
+      }
+    }
+
+    if (dockerConfig.envVars) {
+      for (const [key, value] of Object.entries(dockerConfig.envVars)) {
+        args.push("-e", `${key}=${value}`);
+      }
+    }
+
+    args.push("-e", `SGLANG_SERVER_PORT=${port}`);
+
+    if (modelConfig.gpuMemoryUtilization) {
+      args.push("-e", `SGLANG_GPU_MEMORY_UTILIZATION=${modelConfig.gpuMemoryUtilization}`);
+    }
+    if (modelConfig.maxModelLen) {
+      args.push("-e", `SGLANG_MAX_MODEL_LEN=${modelConfig.maxModelLen}`);
+    }
+
+    if (dockerConfig.extraArgs) {
+      args.push(...dockerConfig.extraArgs.split(" ").filter(Boolean));
+    }
+
+    args.push(dockerConfig.image);
+    args.push("sglang", "serve", "--host", "0.0.0.0", "--port", String(port), modelConfig.modelPath);
+
+    if (modelConfig.tensorParallelSize && modelConfig.tensorParallelSize > 1) {
+      args.push("--tp", String(modelConfig.tensorParallelSize));
+    }
+
+    return args;
+  }
+
+  private async startLocalDocker(
+    port: number,
+    modelConfig: SglangModelConfig,
+    processEntry: SglangProcessEntry,
+  ): Promise<void> {
+    const dockerConfig = modelConfig.server?.docker;
+    if (!dockerConfig) {
+      throw new Error("Docker configuration is required for Docker deployment");
+    }
+
+    const args = this.buildDockerArgs(port, modelConfig);
+    const containerName = dockerConfig.containerName || `sglang-${modelConfig.id}-${port}`;
+
+    console.log(`[SGLang] Starting local Docker SGLang: docker ${args.join(" ")}`);
+
+    processEntry.process = spawn("docker", args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    if (processEntry.process.stdout) {
+      processEntry.process.stdout.on("data", (data: Buffer) => {
+        const output = data.toString();
+        console.log(`[SGLang] Docker stdout: ${output}`);
+      });
+    }
+
+    if (processEntry.process.stderr) {
+      processEntry.process.stderr.on("data", (data: Buffer) => {
+        console.error(`[SGLang] Docker stderr: ${data.toString()}`);
+      });
+    }
+
+    processEntry.pid = processEntry.process.pid;
+    processEntry.containerId = containerName;
+  }
+
+  private async startRemoteDocker(
+    host: string,
+    port: number,
+    modelConfig: SglangModelConfig,
+    sshConfig: SglangServerConfig["ssh"],
+    processEntry: SglangProcessEntry,
+  ): Promise<void> {
+    const dockerConfig = modelConfig.server?.docker;
+    if (!dockerConfig) {
+      throw new Error("Docker configuration is required for Docker deployment");
+    }
+
+    const args = this.buildDockerArgs(port, modelConfig);
+    const containerName = dockerConfig.containerName || `sglang-${modelConfig.id}-${port}`;
+    const dockerArgsStr = args.join(" ");
+
+    const sshHost = sshConfig?.host ?? host;
+    const sshUser = sshConfig?.username ?? "root";
+    const sshPort = sshConfig?.port ?? 22;
+
+    const sshArgs = [
+      "-p", String(sshPort),
+      "-o", "ConnectTimeout=10",
+      "-o", "StrictHostKeyChecking=accept-new",
+      ...(sshConfig?.privateKeyPath ? ["-i", sshConfig.privateKeyPath] : []),
+      `${sshUser}@${sshHost}`,
+      `docker ${dockerArgsStr}`,
+    ];
+
+    console.log(`[SGLang] Starting remote Docker SGLang on ${sshUser}@${sshHost}:${port}`);
+
+    const containerProcess = spawn("ssh", sshArgs, { stdio: ["ignore", "pipe", "pipe"] });
+
+    let containerId = "";
+
+    if (containerProcess.stdout) {
+      containerProcess.stdout.on("data", (data: Buffer) => {
+        containerId += data.toString();
+      });
+    }
+
+    if (containerProcess.stderr) {
+      containerProcess.stderr.on("data", (data: Buffer) => {
+        console.error(`[SGLang] SSH Docker stderr: ${data.toString()}`);
+      });
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        containerProcess.kill();
+        reject(new Error(`Docker start timeout`));
+      }, 60000);
+
+      containerProcess.on("close", (code) => {
+        clearTimeout(timeout);
+        if (code === 0) {
+          processEntry.containerId = containerId.trim().substring(0, 12);
+          console.log(`[SGLang] Remote Docker SGLang started with container ${processEntry.containerId}`);
+          resolve();
+        } else {
+          reject(new Error(`Docker start failed with code ${code}`));
+        }
+      });
+    });
+  }
+
+  private async stopLocalDocker(processEntry: SglangProcessEntry): Promise<void> {
+    const containerId = processEntry.containerId;
+    if (!containerId) {
+      console.warn(`[SGLang] No container ID for ${processEntry.id}`);
+      return;
+    }
+
+    console.log(`[SGLang] Stopping local Docker SGLang: ${containerId}`);
+
+    const stopProcess = spawn("docker", ["stop", containerId], { stdio: ["ignore", "pipe", "pipe"] });
+
+    await new Promise<void>((resolve) => {
+      stopProcess.on("close", () => resolve());
+    });
+  }
+
+  private async stopRemoteDocker(
+    host: string,
+    sshConfig: SglangServerConfig["ssh"],
+    processEntry: SglangProcessEntry,
+  ): Promise<void> {
+    const containerId = processEntry.containerId;
+    if (!containerId) {
+      console.warn(`[SGLang] No container ID for ${processEntry.id}`);
+      return;
+    }
+
+    const sshHost = sshConfig?.host ?? host;
+    const sshUser = sshConfig?.username ?? "root";
+    const sshPort = sshConfig?.port ?? 22;
+
+    const sshArgs = [
+      "-p", String(sshPort),
+      ...(sshConfig?.privateKeyPath ? ["-i", sshConfig.privateKeyPath] : []),
+      `${sshUser}@${sshHost}`,
+      `docker stop ${containerId}`,
+    ];
+
+    console.log(`[SGLang] Stopping remote Docker SGLang: ${containerId}`);
+
+    spawn("ssh", sshArgs, { stdio: "ignore" });
+    await this.sleep(2000);
   }
 
   private async startLocalSglang(port: number, modelConfig: SglangModelConfig, processEntry: SglangProcessEntry): Promise<void> {
@@ -186,9 +406,7 @@ class SglangModelManager {
     processEntry: SglangProcessEntry,
   ): Promise<void> {
     const args = this.buildSglangArgs(port, modelConfig);
-    const sglangCommand = sshConfig?.sglangPath 
-      ? `${sshConfig.sglangPath}/venv/bin/sglang` 
-      : "sglang";
+    const sglangCommand = "sglang";
     const argsStr = args.join(" ");
 
     const sshHost = sshConfig?.host ?? host;
@@ -273,7 +491,7 @@ class SglangModelManager {
 
     try {
       const serverConfig = this.resolveServerConfig(modelConfig);
-      const { type, host, port, ssh } = serverConfig;
+      const { type, host, port, ssh, docker } = serverConfig;
 
       const baseUrl = `http://${host}:${port}/v1`;
 
@@ -294,6 +512,12 @@ class SglangModelManager {
 
       if (type === "local") {
         await this.startLocalSglang(port, modelConfig, processEntry);
+      } else if (type === "docker") {
+        if (ssh) {
+          await this.startRemoteDocker(host, port, modelConfig, ssh, processEntry);
+        } else {
+          await this.startLocalDocker(port, modelConfig, processEntry);
+        }
       } else {
         await this.startRemoteSglang(host, port, modelConfig, ssh, processEntry);
       }
@@ -334,7 +558,7 @@ class SglangModelManager {
 
     try {
       const serverConfig = this.resolveServerConfig(modelConfig);
-      const { type, host, port, ssh } = serverConfig;
+      const { type, host, port, ssh, docker } = serverConfig;
 
       const baseUrl = `http://${host}:${port}/v1`;
 
@@ -357,6 +581,12 @@ class SglangModelManager {
 
       if (type === "local") {
         await this.startLocalSglang(port, modelConfig, processEntry);
+      } else if (type === "docker") {
+        if (ssh) {
+          await this.startRemoteDocker(host, port, modelConfig, ssh, processEntry);
+        } else {
+          await this.startLocalDocker(port, modelConfig, processEntry);
+        }
       } else {
         await this.startRemoteSglang(host, port, modelConfig, ssh, processEntry);
       }
@@ -452,6 +682,13 @@ class SglangModelManager {
 
     if (processEntry.serverType === "local") {
       await this.stopLocalSglang(processEntry);
+    } else if (processEntry.serverType === "docker") {
+      const ssh = processEntry.modelConfig.server?.ssh;
+      if (ssh) {
+        await this.stopRemoteDocker(processEntry.modelConfig.baseUrl, ssh, processEntry);
+      } else {
+        await this.stopLocalDocker(processEntry);
+      }
     } else {
       const ssh = processEntry.modelConfig.server?.ssh;
       await this.stopRemoteSglang(processEntry.modelConfig.baseUrl, ssh, processEntry);

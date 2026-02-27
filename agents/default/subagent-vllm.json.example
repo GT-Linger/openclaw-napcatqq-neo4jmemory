@@ -3,7 +3,24 @@
     "vllmModelId": "deepseek-coder",
     "autoLoad": true,
     "autoUnload": true,
-    "unloadDelayMs": 5000
+    "unloadDelayMs": 5000,
+    "deploymentType": "docker",
+    "server": {
+      "type": "docker",
+      "host": "192.168.1.100",
+      "ssh": {
+        "enabled": true,
+        "host": "192.168.1.100",
+        "username": "gpuuser",
+        "privateKeyPath": "~/.ssh/id_rsa"
+      },
+      "docker": {
+        "enabled": true,
+        "image": "vllm/vllm:latest",
+        "gpuDevices": "0,1",
+        "volumes": ["/models:/models"]
+      }
+    }
   },
   "math-agent": {
     "vllmModelId": "deepseek-math",
@@ -15,5 +32,11 @@
     "vllmModelId": "qwen-coder",
     "autoLoad": true,
     "autoUnload": false
+  },
+  "local-docker-agent": {
+    "vllmModelId": "qwen-docker-local",
+    "autoLoad": true,
+    "autoUnload": true,
+    "deploymentType": "docker"
   }
 }

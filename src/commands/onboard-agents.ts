@@ -11,6 +11,7 @@ import { enhanceSubagentConfig, canEnhancePersonality } from "../agents/subagent
 import { createSubagentWorkspaceFromConfig } from "../agents/subagent-workspace.js";
 import type { SubagentConfig, ModelEndpoint } from "../agents/subagent-config.js";
 import type { VllmServerConfig } from "../agents/subagent-vllm-config.js";
+import type { SglangServerConfig } from "../agents/sglang-manager.js";
 import {
   loadVllmModelsConfig,
   saveVllmModelsConfig,
@@ -123,18 +124,105 @@ async function promptModelProvider(prompter: WizardPrompter): Promise<string> {
   return choice as string;
 }
 
-async function promptServerType(prompter: WizardPrompter): Promise<"local" | "remote"> {
+async function promptServerLocation(prompter: WizardPrompter): Promise<"local" | "remote"> {
   const choice = await prompter.select({
-    message: "服务器类型",
+    message: "vLLM 运行位置",
     options: [
-      { value: "local", label: "本地服务器", hint: "在本机运行 vLLM" },
-      { value: "remote", label: "远程服务器 (SSH)", hint: "通过 SSH 在远程服务器运行 vLLM" },
+      { value: "local", label: "本地服务器", hint: "vLLM 运行在本机" },
+      { value: "remote", label: "远程服务器", hint: "vLLM 运行在其他机器上，需要 SSH 连接" },
     ],
   });
   return choice as "local" | "remote";
 }
 
-async function promptRemoteServerConfig(prompter: WizardPrompter): Promise<VllmServerConfig> {
+async function promptDeploymentMethod(prompter: WizardPrompter): Promise<"command" | "docker"> {
+  const choice = await prompter.select({
+    message: "vLLM 部署方式",
+    options: [
+      { value: "command", label: "命令行", hint: "直接运行 vllm 命令" },
+      { value: "docker", label: "Docker 容器", hint: "使用 Docker 容器运行 vLLM" },
+    ],
+  });
+  return choice as "command" | "docker";
+}
+
+interface DockerConfigInput {
+  image: string;
+  containerName?: string;
+  gpuDevices?: string;
+  volumes?: string[];
+  envVars?: Record<string, string>;
+  extraArgs?: string;
+}
+
+async function promptDockerConfig(prompter: WizardPrompter): Promise<DockerConfigInput> {
+  const image = String(await prompter.text({
+    message: "vLLM Docker 镜像",
+    initialValue: "vllm/vllm:latest",
+    placeholder: "例如: vllm/vllm:latest 或 vllm/vllm:0.6.3post1-cu124",
+  }));
+
+  const containerName = String(await prompter.text({
+    message: "容器名称（可选，留空自动生成）",
+    placeholder: "例如: vllm-coder",
+  }));
+
+  const useGpu = await prompter.confirm({
+    message: "是否启用 GPU 支持？（LLM 推理需要 GPU）",
+    initialValue: true,
+  });
+
+  let gpuDevices: string | undefined;
+  if (useGpu) {
+    const gpuChoice = await prompter.select({
+      message: "GPU 设备选择",
+      options: [
+        { value: "all", label: "所有 GPU", hint: "使用服务器上所有 GPU" },
+        { value: "0", label: "GPU 0", hint: "仅使用第一个 GPU" },
+        { value: "0,1", label: "GPU 0,1", hint: "使用前两个 GPU" },
+        { value: "custom", label: "自定义", hint: "手动输入 GPU ID" },
+      ],
+    });
+
+    if (gpuChoice === "custom") {
+      gpuDevices = String(await prompter.text({
+        message: "输入 GPU 设备 ID（逗号分隔）",
+        placeholder: "例如: 0,1,2",
+      }));
+    } else {
+      gpuDevices = gpuChoice;
+    }
+  }
+
+  const useVolumes = await prompter.confirm({
+    message: "是否需要加载本地模型文件？（如果使用 HuggingFace 模型 ID 则不需要）",
+    initialValue: false,
+  });
+
+  let volumes: string[] | undefined;
+  if (useVolumes) {
+    const volumesInput = String(await prompter.text({
+      message: "卷挂载（主机路径:容器路径，多个用逗号分隔）",
+      placeholder: "例如: /local/models:/models,/data:/data",
+    }));
+    volumes = volumesInput.split(",").map(v => v.trim()).filter(Boolean);
+  }
+
+  const extraArgs = String(await prompter.text({
+    message: "额外 Docker 参数（可选）",
+    placeholder: "例如: --shm-size=16g",
+  }));
+
+  return {
+    image: String(image).trim(),
+    containerName: containerName.trim() || undefined,
+    gpuDevices,
+    volumes: volumes?.length ? volumes : undefined,
+    extraArgs: extraArgs.trim() || undefined,
+  };
+}
+
+async function promptRemoteServerConfig(prompter: WizardPrompter, useDocker: boolean = false): Promise<VllmServerConfig> {
   const remoteHost = String(await prompter.text({
     message: "远程服务器地址 (IP 或域名)",
     placeholder: "例如: 192.168.1.100",
@@ -198,11 +286,6 @@ async function promptRemoteServerConfig(prompter: WizardPrompter): Promise<VllmS
     }));
   }
 
-  const vllmPath = String(await prompter.text({
-    message: "远程服务器上 vLLM 安装路径（可选）",
-    placeholder: "例如: /opt/vllm",
-  }));
-
   return {
     type: "remote",
     host: remoteHost.trim(),
@@ -214,7 +297,247 @@ async function promptRemoteServerConfig(prompter: WizardPrompter): Promise<VllmS
       username: sshUsername.trim(),
       privateKeyPath: privateKeyPath?.trim(),
       password: password?.trim(),
-      vllmPath: vllmPath.trim() || undefined,
+    },
+  };
+}
+
+async function promptDockerServerConfig(prompter: WizardPrompter, isRemote: boolean = false): Promise<VllmServerConfig> {
+  if (isRemote) {
+    await prompter.note(
+      "确保远程服务器已安装 Docker 并具有 GPU 支持。可运行 'docker run --gpus all nvidia/cuda:12.1-base nvidia-smi' 测试。",
+      "前提条件",
+    );
+  }
+
+  let host = "127.0.0.1";
+  let ssh: VllmServerConfig["ssh"] | undefined;
+
+  if (isRemote) {
+    const sshHost = String(await prompter.text({
+      message: "SSH 服务器地址 (IP 或域名)",
+      placeholder: "例如: 192.168.1.100",
+    }));
+
+    const sshPortStr = String(await prompter.text({
+      message: "SSH 端口",
+      initialValue: "22",
+    }));
+    const sshPort = parseInt(sshPortStr, 10) || 22;
+
+    const sshUsername = String(await prompter.text({
+      message: "SSH 用户名",
+      initialValue: "root",
+    }));
+
+    const authMethod = await prompter.select({
+      message: "SSH 认证方式",
+      options: [
+        { value: "key", label: "私钥文件", hint: "使用 SSH 私钥认证（推荐）" },
+        { value: "password", label: "密码", hint: "使用密码认证（安全性较低）" },
+      ],
+    });
+
+    let privateKeyPath: string | undefined;
+    let password: string | undefined;
+
+    if (authMethod === "key") {
+      const homeDir = process.env.HOME || "";
+      privateKeyPath = String(await prompter.text({
+        message: "SSH 私钥路径",
+        initialValue: `${homeDir}/.ssh/id_rsa`,
+      }));
+    } else {
+      password = String(await prompter.text({
+        message: "SSH 密码",
+      }));
+    }
+
+    host = String(await prompter.text({
+      message: "远程服务器地址（Docker 主机）",
+      placeholder: "例如: 192.168.1.100",
+    }));
+
+    ssh = {
+      enabled: true,
+      host: sshHost.trim(),
+      port: sshPort,
+      username: sshUsername.trim(),
+      privateKeyPath: privateKeyPath?.trim(),
+      password: password?.trim(),
+    };
+  } else {
+    host = String(await prompter.text({
+      message: "Docker 主机地址",
+      initialValue: "127.0.0.1",
+    }));
+  }
+
+  const dockerConfig = await promptDockerConfig(prompter);
+
+  return {
+    type: "docker",
+    host: host.trim(),
+    port: 8000,
+    ssh,
+    docker: {
+      enabled: true,
+      image: dockerConfig.image,
+      containerName: dockerConfig.containerName,
+      gpuDevices: dockerConfig.gpuDevices,
+      volumes: dockerConfig.volumes,
+      extraArgs: dockerConfig.extraArgs,
+    },
+  };
+}
+
+async function promptRemoteServerConfigSglang(prompter: WizardPrompter): Promise<SglangServerConfig> {
+  const remoteHost = String(await prompter.text({
+    message: "远程服务器地址 (IP 或域名)",
+    placeholder: "例如: 192.168.1.100",
+  }));
+
+  const remotePortStr = String(await prompter.text({
+    message: "SGLang 服务端口",
+    initialValue: "9000",
+  }));
+  const remotePort = parseInt(remotePortStr, 10) || 9000;
+
+  const useSsh = await prompter.confirm({
+    message: "是否通过 SSH 启动/停止远程 SGLang？",
+    initialValue: true,
+  });
+
+  let ssh: SglangServerConfig["ssh"] | undefined;
+  let host = remoteHost.trim();
+
+  if (useSsh) {
+    const sshHost = String(await prompter.text({
+      message: "SSH 服务器地址 (留空则使用远程服务器地址)",
+      initialValue: remoteHost.trim(),
+    }));
+
+    const sshPortStr = String(await prompter.text({
+      message: "SSH 端口",
+      initialValue: "22",
+    }));
+    const sshPort = parseInt(sshPortStr, 10) || 22;
+
+    const sshUsername = String(await prompter.text({
+      message: "SSH 用户名",
+      initialValue: "root",
+    }));
+
+    const usePrivateKey = await prompter.confirm({
+      message: "是否使用 SSH 私钥认证？",
+      initialValue: true,
+    });
+
+    let privateKeyPath: string | undefined;
+    let password: string | undefined;
+
+    if (usePrivateKey) {
+      const homeDir = process.env.HOME || process.env.USERPROFILE || "";
+      privateKeyPath = String(await prompter.text({
+        message: "SSH 私钥路径",
+        initialValue: `${homeDir}/.ssh/id_rsa`,
+      }));
+    } else {
+      password = String(await prompter.text({
+        message: "SSH 密码",
+      }));
+    }
+
+    ssh = {
+      host: sshHost.trim(),
+      port: sshPort,
+      username: sshUsername.trim(),
+      privateKeyPath: privateKeyPath?.trim(),
+    };
+  }
+
+  return {
+    type: "remote",
+    host: host.trim(),
+    port: remotePort,
+    ssh,
+  };
+}
+
+async function promptDockerServerConfigSglang(prompter: WizardPrompter, isRemote: boolean = false): Promise<SglangServerConfig> {
+  if (isRemote) {
+    await prompter.note(
+      "确保远程服务器已安装 Docker 并具有 GPU 支持。可运行 'docker run --gpus all nvidia/cuda:12.1-base nvidia-smi' 测试。",
+      "前提条件",
+    );
+  }
+
+  let host = "127.0.0.1";
+  let ssh: SglangServerConfig["ssh"] | undefined;
+
+  if (isRemote) {
+    const sshHost = String(await prompter.text({
+      message: "SSH 服务器地址",
+      placeholder: "例如: 192.168.1.100",
+    }));
+
+    const sshPortStr = String(await prompter.text({
+      message: "SSH 端口",
+      initialValue: "22",
+    }));
+    const sshPort = parseInt(sshPortStr, 10) || 22;
+
+    const sshUsername = String(await prompter.text({
+      message: "SSH 用户名",
+      initialValue: "root",
+    }));
+
+    const usePrivateKey = await prompter.confirm({
+      message: "是否使用 SSH 私钥认证？",
+      initialValue: true,
+    });
+
+    let privateKeyPath: string | undefined;
+
+    if (usePrivateKey) {
+      const homeDir = process.env.HOME || process.env.USERPROFILE || "";
+      privateKeyPath = String(await prompter.text({
+        message: "SSH 私钥路径",
+        initialValue: `${homeDir}/.ssh/id_rsa`,
+      }));
+    }
+
+    host = String(await prompter.text({
+      message: "远程服务器地址（Docker 主机）",
+      placeholder: "例如: 192.168.1.100",
+    }));
+
+    ssh = {
+      host: sshHost.trim(),
+      port: sshPort,
+      username: sshUsername.trim(),
+      privateKeyPath: privateKeyPath?.trim(),
+    };
+  } else {
+    host = String(await prompter.text({
+      message: "Docker 主机地址",
+      initialValue: "127.0.0.1",
+    }));
+  }
+
+  const dockerConfig = await promptDockerConfig(prompter);
+
+  return {
+    type: "docker",
+    host: host.trim(),
+    port: 9000,
+    ssh,
+    docker: {
+      enabled: true,
+      image: dockerConfig.image,
+      containerName: dockerConfig.containerName,
+      gpuDevices: dockerConfig.gpuDevices,
+      volumes: dockerConfig.volumes,
+      extraArgs: dockerConfig.extraArgs,
     },
   };
 }
@@ -251,6 +574,47 @@ async function promptModelName(prompter: WizardPrompter, provider: string): Prom
     initialValue: defaultModels[provider],
   });
   return String(model || defaultModels[provider]);
+}
+
+interface GpuMemoryConfig {
+  gpuMemoryUtilization?: number;
+  maxModelLen?: number;
+}
+
+async function promptGpuMemoryConfig(prompter: WizardPrompter): Promise<GpuMemoryConfig> {
+  const enableLimit = await prompter.confirm({
+    message: "是否需要限制 GPU 显存使用？（避免 OOM）",
+    initialValue: false,
+  });
+
+  if (!enableLimit) {
+    return {};
+  }
+
+  const gpuMemoryUtilization = Number(await prompter.text({
+    message: "GPU 显存利用率 (0.0-1.0)",
+    placeholder: "例如: 0.9 表示使用 90% 显存",
+    initialValue: "0.9",
+  }));
+
+  const hasMaxModelLen = await prompter.confirm({
+    message: "是否限制模型最大上下文长度？（可减少显存）",
+    initialValue: false,
+  });
+
+  let maxModelLen: number | undefined;
+  if (hasMaxModelLen) {
+    maxModelLen = Number(await prompter.text({
+      message: "最大上下文长度",
+      placeholder: "例如: 32768",
+      initialValue: "32768",
+    }));
+  }
+
+  return {
+    gpuMemoryUtilization: gpuMemoryUtilization || 0.9,
+    maxModelLen,
+  };
 }
 
 async function promptSubagentName(prompter: WizardPrompter): Promise<string> {
@@ -458,13 +822,24 @@ export async function setupAgents(
           if (modifyModel) {
             const provider = await promptModelProvider(prompter);
             let baseUrl: string;
-            let server: VllmServerConfig | undefined;
+            let server: VllmServerConfig | SglangServerConfig | undefined;
             
             if (provider === "vllm" || provider === "sglang") {
-              const serverType = await promptServerType(prompter);
-              if (serverType === "remote") {
-                server = await promptRemoteServerConfig(prompter);
-                baseUrl = `http://${server.host}:${server.port}/v1`;
+              const serverLocation = await promptServerLocation(prompter);
+              const deploymentMethod = await promptDeploymentMethod(prompter);
+              
+              if (serverLocation === "local" && deploymentMethod === "command") {
+                baseUrl = await promptBaseUrl(prompter, provider);
+              } else if (serverLocation === "remote" && deploymentMethod === "command") {
+                server = provider === "vllm" 
+                  ? await promptRemoteServerConfig(prompter, false)
+                  : await promptRemoteServerConfigSglang(prompter);
+                baseUrl = `http://${(server as VllmServerConfig).host}:${(server as VllmServerConfig).port}/v1`;
+              } else if (deploymentMethod === "docker") {
+                server = provider === "vllm" 
+                  ? await promptDockerServerConfig(prompter, serverLocation === "remote")
+                  : await promptDockerServerConfigSglang(prompter, serverLocation === "remote");
+                baseUrl = `http://${(server as VllmServerConfig).host}:${(server as VllmServerConfig).port}/v1`;
               } else {
                 baseUrl = await promptBaseUrl(prompter, provider);
               }
@@ -474,11 +849,18 @@ export async function setupAgents(
             
             const model = await promptModelName(prompter, provider);
 
+            let gpuMemoryConfig: GpuMemoryConfig = {};
+            if (provider === "vllm" || provider === "sglang") {
+              gpuMemoryConfig = await promptGpuMemoryConfig(prompter);
+            }
+
             config.model.endpoint = {
               provider: provider as any,
               baseUrl,
               model,
-              server,
+              server: server as any,
+              gpuMemoryUtilization: gpuMemoryConfig.gpuMemoryUtilization,
+              maxModelLen: gpuMemoryConfig.maxModelLen,
             };
           }
         } else {
@@ -488,13 +870,24 @@ export async function setupAgents(
 
           const provider = await promptModelProvider(prompter);
           let baseUrl: string;
-          let server: VllmServerConfig | undefined;
+          let server: VllmServerConfig | SglangServerConfig | undefined;
           
           if (provider === "vllm" || provider === "sglang") {
-            const serverType = await promptServerType(prompter);
-            if (serverType === "remote") {
-              server = await promptRemoteServerConfig(prompter);
-              baseUrl = `http://${server.host}:${server.port}/v1`;
+            const serverLocation = await promptServerLocation(prompter);
+            const deploymentMethod = await promptDeploymentMethod(prompter);
+            
+            if (serverLocation === "local" && deploymentMethod === "command") {
+              baseUrl = await promptBaseUrl(prompter, provider);
+            } else if (serverLocation === "remote" && deploymentMethod === "command") {
+              server = provider === "vllm" 
+                ? await promptRemoteServerConfig(prompter, false)
+                : await promptRemoteServerConfigSglang(prompter);
+              baseUrl = `http://${(server as VllmServerConfig).host}:${(server as VllmServerConfig).port}/v1`;
+            } else if (deploymentMethod === "docker") {
+              server = provider === "vllm" 
+                ? await promptDockerServerConfig(prompter, serverLocation === "remote")
+                : await promptDockerServerConfigSglang(prompter, serverLocation === "remote");
+              baseUrl = `http://${(server as VllmServerConfig).host}:${(server as VllmServerConfig).port}/v1`;
             } else {
               baseUrl = await promptBaseUrl(prompter, provider);
             }
@@ -504,11 +897,18 @@ export async function setupAgents(
           
           const model = await promptModelName(prompter, provider);
 
+          let gpuMemoryConfig: GpuMemoryConfig = {};
+          if (provider === "vllm" || provider === "sglang") {
+            gpuMemoryConfig = await promptGpuMemoryConfig(prompter);
+          }
+
           const endpoint: ModelEndpoint = {
             provider: provider as any,
             baseUrl,
             model,
-            server,
+            server: server as any,
+            gpuMemoryUtilization: gpuMemoryConfig.gpuMemoryUtilization,
+            maxModelLen: gpuMemoryConfig.maxModelLen,
           };
 
           config = {
